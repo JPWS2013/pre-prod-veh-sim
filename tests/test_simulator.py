@@ -173,7 +173,8 @@ def _built_vehicle(sim):
 class _NoAssign(FifoController):
     def decide(self, obs):
         a = super().decide(obs)
-        return Actions(release_reservation_ids=a.release_reservation_ids, production_order_ids=a.production_order_ids)
+        return Actions(release_reservation_ids=a.release_reservation_ids, production_order_ids=a.production_order_ids,
+                       center_assignments=a.center_assignments)
 
 
 def test_assignment_requires_matching_config():
@@ -248,23 +249,80 @@ def test_cancelled_reservation_cannot_be_released():
 # --- delivery centers ---------------------------------------------------------------------
 
 
-def test_open_center_reroutes_unmatched_customers():
+def test_new_reservations_have_no_center_until_controller_assigns():
+    sim = Simulator(small_config())
+    obs = sim.step()
+    assert obs.new_reservations and all(r.center_id is None for r in obs.new_reservations)
+    assert {r.id for r in obs.unassigned_reservations} == {r.id for r in obs.new_reservations}
+    r = obs.new_reservations[0]
+    obs = sim.step(Actions(center_assignments={r.id: r.nearest_center_id}))
+    assert sim.reservations[r.id].center_id == r.nearest_center_id
+    assert r.id not in {x.id for x in obs.unassigned_reservations}
+
+
+def test_center_assignment_is_final():
+    sim = Simulator(small_config())
+    obs = sim.step()
+    rid = obs.new_reservations[0].id
+    sim.step(Actions(center_assignments={rid: "Chicago, IL"}))
+    chicago = sim.reservations[rid].center_id
+    assert sim.centers[chicago].city == "Chicago"
+    with pytest.raises(SimulationError, match="final"):
+        sim.step(Actions(center_assignments={rid: "Boston, MA"}))
+    assert sim.reservations[rid].center_id == chicago
+
+
+def test_unknown_center_is_rejected():
+    sim = Simulator(small_config())
+    obs = sim.step()
+    with pytest.raises(SimulationError, match="unknown delivery center"):
+        sim.step(Actions(center_assignments={obs.new_reservations[0].id: "Nowhere, ZZ"}))
+
+
+def test_vehicle_assignment_needs_a_center():
+    sim = Simulator(small_config(), build_time=FixedBuildTime(7), quality=UniformQualityHold(0, 1, 1))
+
+    class NoCenters(_NoAssign):
+        def decide(self, obs):
+            a = super().decide(obs)
+            return Actions(release_reservation_ids=a.release_reservation_ids,
+                           production_order_ids=a.production_order_ids)
+
+    obs = advance_until(sim, lambda o: bool(o.vehicles_produced), controller=NoCenters())
+    v = obs.vehicles_produced[0]
+    oid = v.built_for_order_id
+    with pytest.raises(SimulationError, match="no delivery center"):
+        sim.step(Actions(assignments={v.vin: oid}))
+    # Assigning the center in the same week makes it valid.
+    rid = sim.orders[oid].reservation_id
+    sim.step(Actions(assignments={v.vin: oid}, center_assignments={rid: "Denver, CO"}))
+    assert sim.orders[oid].center_id == sim.reservations[rid].center_id
+    assert sim.vehicles[v.vin].location == sim.orders[oid].center_id
+
+
+def test_open_center_with_capacity_and_assign_same_week():
     cfg = small_config()
     sim = Simulator(cfg)
-    run(sim, weeks=3)
-    near_kc = [r for r in sim.reservations.values() if r.address.city == "Kansas City"]
-    before = len(sim.centers)
-    obs = sim.step(Actions(open_delivery_centers=[("Kansas City", "MO")]))
-    assert len(sim.centers) == before + 1
-    new = next(c for c in obs.centers if c.city == "Kansas City")
-    assert new.weekly_capacity == cfg.logistics.new_center_capacity
-    for r in near_kc:
-        if r.status not in (CustomerStatus.IN_TRANSIT, CustomerStatus.AT_CENTER, CustomerStatus.DELIVERED,
-                            CustomerStatus.CANCELLED):
-            assert r.center_id == new.id
-    # New reservations from there go to the new center too.
-    run_more = [r for r in sim.reservations.values() if r.address.city == "Kansas City" and r.created_day >= 21]
-    assert all(r.center_id == new.id for r in run_more)
+    obs = sim.step()
+    rid = obs.new_reservations[0].id
+    obs = sim.step(Actions(open_delivery_centers=[("Kansas City", "MO", 120), ("Omaha", "NE")],
+                           center_assignments={rid: "Kansas City, MO"}))
+    kc = next(c for c in obs.centers if c.city == "Kansas City")
+    omaha = next(c for c in obs.centers if c.city == "Omaha")
+    assert kc.weekly_capacity == 120
+    assert omaha.weekly_capacity == cfg.logistics.new_center_capacity
+    assert sim.reservations[rid].center_id == kc.id
+    # Opening a center never moves customers who already have one.
+    assigned_before = {r.id: r.center_id for r in sim.reservations.values() if r.center_id}
+    sim.step(Actions(open_delivery_centers=[("Wichita", "KS", 40)]))
+    assert all(sim.reservations[i].center_id == c for i, c in assigned_before.items())
+
+
+@pytest.mark.parametrize("cap", [0, -5, "lots"])
+def test_bad_center_capacity_is_rejected(cap):
+    sim = Simulator(small_config())
+    with pytest.raises(SimulationError, match="capacity"):
+        sim.step(Actions(open_delivery_centers=[("Wichita", "KS", cap)]))
 
 
 def test_duplicate_center_is_rejected():

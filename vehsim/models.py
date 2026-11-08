@@ -85,14 +85,15 @@ class Reservation:
     id: str
     created_day: int
     address: Address
-    center_id: str
+    center_id: Optional[str] = None  # set once by the controller; never changes afterwards
+    center_assigned_day: Optional[int] = None
     status: CustomerStatus = CustomerStatus.RESERVED
     invited_day: Optional[int] = None
     will_order: Optional[bool] = None  # hidden from controllers; drawn at invite
     order_id: Optional[str] = None
     cancelled_day: Optional[int] = None
     status_at_cancel: Optional[CustomerStatus] = None
-    reroutes: int = 0
+    nearest_hint: Optional[tuple[int, str]] = field(default=None, repr=False)  # (n_centers, center_id) cache
 
 
 @dataclass
@@ -101,7 +102,7 @@ class Order:
     reservation_id: str
     placed_day: int
     config: VehicleConfig
-    center_id: str
+    center_id: Optional[str]
     status: CustomerStatus = CustomerStatus.ORDERED
     production_vin: Optional[str] = None  # vehicle started for this order
     build_start_day: Optional[int] = None

@@ -196,7 +196,7 @@ def build_report(sim: "Simulator") -> Report:
     for r in sim.reservations.values():
         o = sim.orders.get(r.order_id) if r.order_id else None
         v = sim.vehicles.get(o.vin) if o and o.vin else None
-        center = sim.centers[r.center_id]
+        center = sim.centers.get(r.center_id) if r.center_id else None
         row = {
             "reservation_id": r.id,
             "created_day": r.created_day,
@@ -204,7 +204,8 @@ def build_report(sim: "Simulator") -> Report:
             "city": r.address.city,
             "state": r.address.state,
             "center_id": r.center_id,
-            "center": center.name,
+            "center": center.name if center else None,
+            "center_assigned_day": r.center_assigned_day,
             "status": r.status.value,
             "invited_day": r.invited_day,
             "will_order": r.will_order,
@@ -290,15 +291,18 @@ def build_report(sim: "Simulator") -> Report:
     }
 
     by_center = []
-    for cid, center in sim.centers.items():
+    groups = [(cid, c.name, c.weekly_capacity, c.opened_day, len(c.queue)) for cid, c in sim.centers.items()]
+    if any(c["center_id"] is None for c in customers):
+        groups.append((None, "(no center assigned)", 0, None, 0))
+    for cid, name, capacity, opened_day, queue_len in groups:
         rows = [c for c in customers if c["center_id"] == cid]
         st = summarize(c["order_to_delivery"] for c in rows)
         km = survival("placed_day", rows)
         by_center.append({
             "center_id": cid,
-            "center": center.name,
-            "weekly_capacity": center.weekly_capacity,
-            "opened_day": center.opened_day,
+            "center": name,
+            "weekly_capacity": capacity,
+            "opened_day": opened_day,
             "reservations": len(rows),
             "delivered": st["n"],
             "order_to_delivery_mean": st["mean"],
@@ -307,7 +311,7 @@ def build_report(sim: "Simulator") -> Report:
             "order_to_delivery_survival_p50": km["p50"],
             "still_waiting": sum(1 for c in rows if c["status"] not in ("DELIVERED", "CANCELLED")),
             "cancelled": sum(1 for c in rows if c["status"] == "CANCELLED"),
-            "handover_queue_at_end": len(center.queue),
+            "handover_queue_at_end": queue_len,
         })
 
     by_cohort = []

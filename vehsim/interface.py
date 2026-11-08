@@ -49,6 +49,16 @@ ACTIVE_STATUSES = {
 }
 
 
+def _split_ref(ref: str) -> tuple[str, str]:
+    """'Chicago, IL' -> ('Chicago', 'IL'); anything without a comma -> (ref, '')."""
+    city, _, state = str(ref).rpartition(",")
+    return (city, state) if city else (str(ref), "")
+
+
+def _center_key(city: str, state: str) -> tuple[str, str]:
+    return (" ".join(city.split()).lower(), state.strip().upper())
+
+
 class SimulationError(Exception):
     """Raised when the controller submits invalid actions (in strict mode)."""
 
@@ -71,12 +81,15 @@ class Actions:
     release_reservation_ids: list[str] = field(default_factory=list)
     production_order_ids: list[str] = field(default_factory=list)
     assignments: dict[str, str] = field(default_factory=dict)  # vin -> order_id
-    open_delivery_centers: list[tuple[str, str]] = field(default_factory=list)  # (city, state)
+    # reservation_id -> center id ("C03") or name ("Chicago, IL"). Final once applied.
+    center_assignments: dict[str, str] = field(default_factory=dict)
+    # (city, state) or (city, state, weekly_handover_capacity)
+    open_delivery_centers: list[tuple] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
 class Rejection:
-    kind: str  # release | production | assignment | open_center
+    kind: str  # release | production | assignment | center_assignment | open_center
     item: str
     reason: str
 
@@ -88,7 +101,8 @@ class ReservationView:
     street: str
     city: str
     state: str
-    center_id: str
+    center_id: Optional[str]  # None until the controller assigns one
+    nearest_center_id: str  # hint: closest open center to the address
 
 
 @dataclass(frozen=True)
@@ -97,7 +111,7 @@ class OrderView:
     reservation_id: str
     placed_day: int
     config: VehicleConfig
-    center_id: str
+    center_id: Optional[str]
     status: str
     production_vin: Optional[str]
 
@@ -166,6 +180,7 @@ class Observation:
     cancellations: list[CancellationView] = field(default_factory=list)
     deliveries: list[DeliveryView] = field(default_factory=list)
     pending_reservation_ids: list[str] = field(default_factory=list)  # RESERVED, not yet invited
+    unassigned_reservations: list[ReservationView] = field(default_factory=list)  # active, no center yet
     open_orders: list[OrderView] = field(default_factory=list)  # no vehicle assigned yet
     available_vehicles: list[VehicleView] = field(default_factory=list)  # built, unassigned
     centers: list[CenterView] = field(default_factory=list)
@@ -287,8 +302,10 @@ class Simulator:
         if rejections and self.config.strict:
             raise SimulationError(rejections)
 
-        for city, state in plan["open"]:
-            self._open_center(city, state, d0)
+        for city, state, cap in plan["open"]:
+            self._open_center(city, state, cap, d0)
+        for rid, ref in plan["centers"]:
+            self._assign_center(self.reservations[rid], self._center_by_ref(ref), d0)
         for rid in plan["release"]:
             self._invite(self.reservations[rid], d0)
         for oid in plan["production"]:
@@ -313,21 +330,53 @@ class Simulator:
 
     def _validate(self, a: Actions, capacity: int):
         rej: list[Rejection] = []
-        plan = {"open": [], "release": [], "production": [], "assign": []}
+        plan = {"open": [], "centers": [], "release": [], "production": [], "assign": []}
 
-        existing = {(c.city.lower(), c.state.upper()) for c in self.centers.values()}
-        for city, state in a.open_delivery_centers:
-            key = (city.strip().lower(), state.strip().upper())
+        existing = {_center_key(c.city, c.state) for c in self.centers.values()}
+        new_names = set()
+        for spec in a.open_delivery_centers:
+            label = ", ".join(str(x) for x in spec)
+            if len(spec) not in (2, 3):
+                rej.append(Rejection("open_center", label, "expected (city, state) or (city, state, capacity)"))
+                continue
+            city, state = str(spec[0]).strip(), str(spec[1]).strip().upper()
+            cap = spec[2] if len(spec) == 3 and spec[2] not in (None, "") else self.config.logistics.new_center_capacity
+            try:
+                cap = int(cap)
+            except (TypeError, ValueError):
+                cap = -1
+            key = _center_key(city, state)
             if key in existing:
-                rej.append(Rejection("open_center", f"{city}, {state}", "a delivery center already exists there"))
+                rej.append(Rejection("open_center", label, "a delivery center already exists there"))
+                continue
+            if cap <= 0:
+                rej.append(Rejection("open_center", label, "capacity must be a positive whole number per week"))
                 continue
             try:
                 self.geo.coords(city, state)
             except ValueError as e:
-                rej.append(Rejection("open_center", f"{city}, {state}", str(e)))
+                rej.append(Rejection("open_center", label, str(e)))
                 continue
             existing.add(key)
-            plan["open"].append((city.strip(), state.strip().upper()))
+            new_names.add(key)
+            plan["open"].append((city, state, cap))
+
+        centered = set()
+        for rid, ref in a.center_assignments.items():
+            r = self.reservations.get(rid)
+            target = self._center_by_ref(ref)
+            if r is None:
+                rej.append(Rejection("center_assignment", rid, "unknown reservation id"))
+            elif r.status not in ACTIVE_STATUSES:
+                rej.append(Rejection("center_assignment", rid, f"reservation is {r.status.value}"))
+            elif r.center_id is not None:
+                rej.append(Rejection("center_assignment", rid,
+                                     f"already assigned to {r.center_id}; center assignments are final"))
+            elif target is None and _center_key(*_split_ref(ref)) not in new_names:
+                rej.append(Rejection("center_assignment", rid, f"unknown delivery center {ref!r}"))
+            else:
+                plan["centers"].append((rid, ref))
+                centered.add(rid)
 
         seen = set()
         for rid in a.release_reservation_ids:
@@ -376,6 +425,9 @@ class Simulator:
             elif v.config != o.config:
                 rej.append(Rejection("assignment", vin,
                                      f"config {v.config.code} does not match order {oid} config {o.config.code}"))
+            elif o.center_id is None and o.reservation_id not in centered:
+                rej.append(Rejection("assignment", vin, f"order {oid} has no delivery center; "
+                                                        f"assign reservation {o.reservation_id} to a center first"))
             else:
                 plan["assign"].append((vin, oid))
             if o is not None:
@@ -391,20 +443,30 @@ class Simulator:
         if status in (CustomerStatus.DELIVERED, CustomerStatus.CANCELLED):
             self._active.pop(r.id, None)
 
-    def _open_center(self, city: str, state: str, day: int) -> None:
-        center = self._add_center(city, state, self.config.logistics.new_center_capacity, day)
+    def _open_center(self, city: str, state: str, capacity: int, day: int) -> None:
+        center = self._add_center(city, state, capacity, day)
         self._buf["opened"].append(center.id)
-        # Re-route customers who have no vehicle assigned yet if the new center is closer.
-        for rid in self._active:
-            r = self.reservations[rid]
-            if r.status in (CustomerStatus.IN_TRANSIT, CustomerStatus.AT_CENTER):
-                continue
-            new = self.resolver.resolve(r.address, self.centers.values())
-            if new != r.center_id:
-                r.center_id = new
-                r.reroutes += 1
-                if r.order_id:
-                    self.orders[r.order_id].center_id = new
+
+    def _center_by_ref(self, ref: str) -> Optional[str]:
+        """Center id from an id ("C03") or a name ("Chicago, IL"); None if unknown."""
+        if ref in self.centers:
+            return ref
+        key = _center_key(*_split_ref(ref))
+        for c in self.centers.values():
+            if _center_key(c.city, c.state) == key:
+                return c.id
+        return None
+
+    def _assign_center(self, r: Reservation, center_id: str, day: int) -> None:
+        r.center_id, r.center_assigned_day = center_id, day
+        if r.order_id:
+            self.orders[r.order_id].center_id = center_id
+
+    def _nearest_center(self, r: Reservation) -> str:
+        """Closest open center to the customer (cached until a new center opens)."""
+        if r.nearest_hint is None or r.nearest_hint[0] != len(self.centers):
+            r.nearest_hint = (len(self.centers), self.resolver.resolve(r.address, self.centers.values()))
+        return r.nearest_hint[1]
 
     def _invite(self, r: Reservation, day: int) -> None:
         r.invited_day = day
@@ -462,8 +524,7 @@ class Simulator:
         if phase == Phase.RESERVATION_ARRIVES:
             addr = self.addresses.sample(self._rng["address"])
             rid = self._next_id("R", 6)
-            r = Reservation(id=rid, created_day=day, address=addr,
-                            center_id=self.resolver.resolve(addr, self.centers.values()))
+            r = Reservation(id=rid, created_day=day, address=addr)
             self.reservations[rid] = r
             self._active[rid] = None
             self._buf["reservations"].append(rid)
@@ -586,6 +647,8 @@ class Simulator:
             deliveries=[self._delivery_view(self.orders[i]) for i in b["deliveries"]],
             pending_reservation_ids=[i for i in self._active
                                      if self.reservations[i].status == CustomerStatus.RESERVED],
+            unassigned_reservations=[self._reservation_view(self.reservations[i]) for i in self._active
+                                     if self.reservations[i].center_id is None],
             open_orders=[self._order_view(o) for o in self.orders.values() if o.status in MATCHABLE_ORDER_STATUSES],
             available_vehicles=[self._vehicle_view(v) for v in self.vehicles.values()
                                 if v.status == VehicleStatus.AVAILABLE],
@@ -595,10 +658,9 @@ class Simulator:
             rejections=list(rejections),
         )
 
-    @staticmethod
-    def _reservation_view(r: Reservation) -> ReservationView:
+    def _reservation_view(self, r: Reservation) -> ReservationView:
         a = r.address
-        return ReservationView(r.id, r.created_day, a.street, a.city, a.state, r.center_id)
+        return ReservationView(r.id, r.created_day, a.street, a.city, a.state, r.center_id, self._nearest_center(r))
 
     def _delivery_view(self, o: Order) -> DeliveryView:
         return DeliveryView(o.id, o.reservation_id, o.vin, o.center_id, o.delivered_day)
@@ -610,6 +672,8 @@ class Simulator:
             "week": w,
             "reservations": len(b["reservations"]),
             "invites": len(plan["release"]),
+            "center_assignments": len(plan["centers"]),
+            "centers_opened": len(plan["open"]),
             "orders": len(b["orders"]),
             "slots_offered": capacity,
             "builds_started": len(b["started"]),

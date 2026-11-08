@@ -4,8 +4,9 @@ A week-by-week, event-driven simulator for the start of production of a new vehi
 
 Each week the simulator generates customer reservations, turns invited reservations into
 orders, runs the factory and moves finished vehicles to delivery centers. **You** play the
-controller: each week you decide which reservations may order, which orders get a production
-slot, and which built vehicle goes to which order. At the end, it reports customer-facing
+controller: each week you decide which delivery center serves each reservation, which
+reservations may order, which orders get a production slot, which built vehicle goes to which
+order, and whether to open new delivery centers. At the end, it reports customer-facing
 wait-time statistics.
 
 ## Setup
@@ -39,10 +40,11 @@ sim = Simulator(SimConfig(seed=42))
 obs = sim.reset()
 while not sim.done:
     actions = Actions(
-        release_reservation_ids=[...],      # reservations invited to order
-        production_order_ids=[...],         # at most obs.production_capacity
-        assignments={"V0000001": "O000001"},  # built vehicle -> order (configs must match)
-        open_delivery_centers=[],           # optional: [("Kansas City", "MO")]
+        center_assignments={"R000001": "C04"},  # reservation -> center id or "City, ST"; final
+        release_reservation_ids=[...],          # reservations invited to order
+        production_order_ids=[...],             # at most obs.production_capacity
+        assignments={"V0000001": "O000001"},    # built vehicle -> order (configs must match)
+        open_delivery_centers=[("Kansas City", "MO", 60)],  # optional; capacity/week optional
     )
     obs = sim.step(actions)
 print(sim.report().to_text())
@@ -55,7 +57,8 @@ See `vehsim/controllers/fifo.py` for a complete controller.
 | Field | Meaning |
 |---|---|
 | `production_capacity` | Production slots for the coming week |
-| `new_reservations` | Reservations created last week, with address and delivery center |
+| `new_reservations` | Reservations created last week, with address and `nearest_center_id` (a hint) |
+| `unassigned_reservations` | Active reservations that don't have a delivery center yet |
 | `new_orders` | Orders placed last week, with vehicle config |
 | `vehicles_started` / `vehicles_produced` | Builds started; vehicles that passed quality |
 | `quality_holds_started` / `_released` | VINs entering / leaving quality hold |
@@ -66,14 +69,17 @@ See `vehsim/controllers/fifo.py` for a complete controller.
 | `centers`, `factory` | Delivery center capacity/queues; factory occupancy |
 
 Invalid actions raise `SimulationError` and nothing changes. Examples: more production orders
-than slots, unknown IDs, a config mismatch, or a vehicle that isn't built. With
+than slots, unknown IDs, a config mismatch, a vehicle that isn't built, changing a reservation's
+delivery center, or assigning a vehicle to an order with no delivery center. With
 `SimConfig(strict=False)` invalid items are skipped instead and listed in `obs.rejections`.
 
 ## Playing week by week with CSV files
 
 ```bash
 uv run vehsim init runs/game            # creates runs/game/week_000/{observation,actions}
-# edit runs/game/week_000/actions/*.csv (release.csv, production.csv, assignments.csv, open_centers.csv)
+# edit runs/game/week_000/actions/*.csv:
+#   center_assignments.csv (reservation_id,center), release.csv, production.csv,
+#   assignments.csv, open_centers.csv (city,state,capacity — capacity optional)
 uv run vehsim step runs/game            # simulates the week, writes week_001/
 uv run vehsim report runs/game          # report at any point
 ```
@@ -84,8 +90,11 @@ Time is tracked in days; decisions are made weekly (week *w* = days 7w…7w+6). 
 on the first day of the week.
 
 - **Reservations** follow a Poisson process with a launch spike that decays to a steady rate.
-  Addresses are drawn from ~75 US cities weighted by market size, and each customer is routed
-  to the nearest delivery center.
+  Addresses are drawn from ~75 US cities weighted by market size.
+- **Delivery centers** are assigned to reservations by the controller, at any point before a
+  vehicle is assigned to the customer's order. Once set, a reservation's center can't be
+  changed. Each reservation comes with a `nearest_center_id` hint; the FIFO controller just
+  uses that.
 - **Ordering:** 10% of invited customers never order and stay `INVITED`. The rest order after
   X days, where X ~ Normal(10, 6) truncated to 1–30 days. The vehicle config (paint, interior,
   trim, wheels) is chosen at order time.
@@ -99,8 +108,9 @@ on the first day of the week.
   back to `ORDERED`.
 - **Logistics:** transit = ⌈miles / 500⌉ weeks. Each delivery center hands over vehicles
   first-in-first-out, up to its weekly capacity, starting 2 days after arrival. The 20 default
-  centers split 700 handovers/week by market size. Centers opened mid-run get 25/week, and
-  customers without a vehicle yet are re-routed to them if they're closer.
+  centers split 700 handovers/week by market size. Centers opened mid-run get the weekly
+  capacity the controller specifies (default 25), and only serve reservations the controller
+  assigns to them.
 - **Cancellations:** weekly probability = base rate for the customer's status + 0.0001 × weeks
   since reservation. A cancelled customer's vehicle becomes unassigned stock where it is
   (factory, in transit or a center).

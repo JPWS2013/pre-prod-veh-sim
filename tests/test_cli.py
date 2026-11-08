@@ -35,3 +35,18 @@ def test_run_command(tmp_path, capsys):
     assert "Simulation summary" in capsys.readouterr().out
     assert (tmp_path / "out" / "week_000" / "observation" / "status.json").exists()
     assert (tmp_path / "out" / "report" / "weekly.csv").exists()
+
+
+def test_csv_center_actions(tmp_path):
+    root = tmp_path / "game"
+    main(["init", str(root), "--weeks", "3"])
+    main(["step", str(root)])
+    unassigned = (root / "week_001" / "observation" / "unassigned_reservations.csv").read_text().splitlines()
+    header = unassigned[0].split(",")
+    first = dict(zip(header, unassigned[1].split(",")))
+    acts = root / "week_001" / "actions"
+    (acts / "open_centers.csv").write_text("city,state,capacity\nOmaha,NE,75\n")
+    (acts / "center_assignments.csv").write_text(f"reservation_id,center\n{first['id']},\"Omaha, NE\"\n")
+    assert main(["step", str(root)]) == 0
+    centers = (root / "week_002" / "observation" / "centers.csv").read_text()
+    assert "Omaha,NE,75" in centers

@@ -10,6 +10,7 @@ from ..interface import Actions, Observation
 
 class FifoController:
     """
+    * Delivery center: send every new reservation to its nearest center.
     * Release: invite the oldest reservations, keeping roughly ``backlog_weeks`` of
       factory output in orders that are waiting for a slot (counting invites that
       are expected to turn into orders).
@@ -74,5 +75,7 @@ class FifoController:
         for rid in release:
             self._outstanding[rid] = obs.day
 
+        centers = {r.id: r.nearest_center_id for r in obs.unassigned_reservations}
+
         return Actions(release_reservation_ids=release, production_order_ids=production,
-                       assignments=assignments)
+                       assignments=assignments, center_assignments=centers)

@@ -14,7 +14,8 @@ ACTION_FILES = {
     "release.csv": ["reservation_id"],
     "production.csv": ["order_id"],
     "assignments.csv": ["vin", "order_id"],
-    "open_centers.csv": ["city", "state"],
+    "center_assignments.csv": ["reservation_id", "center"],  # center id (C03) or "City, ST"
+    "open_centers.csv": ["city", "state", "capacity"],  # capacity optional
 }
 
 
@@ -35,6 +36,7 @@ def write_observation(obs: Observation, out_dir: Path) -> None:
     tables = {
         "new_reservations": obs.new_reservations,
         "new_orders": obs.new_orders,
+        "unassigned_reservations": obs.unassigned_reservations,
         "vehicles_started": obs.vehicles_started,
         "vehicles_produced": obs.vehicles_produced,
         "cancellations": obs.cancellations,
@@ -81,7 +83,8 @@ def write_actions(actions: Actions, actions_dir: Path) -> None:
         "release.csv": [[r] for r in actions.release_reservation_ids],
         "production.csv": [[o] for o in actions.production_order_ids],
         "assignments.csv": [[v, o] for v, o in actions.assignments.items()],
-        "open_centers.csv": [list(c) for c in actions.open_delivery_centers],
+        "center_assignments.csv": [[r, c] for r, c in actions.center_assignments.items()],
+        "open_centers.csv": [list(c) + [""] * (3 - len(c)) for c in actions.open_delivery_centers],
     }
     for name, header in ACTION_FILES.items():
         with open(actions_dir / name, "w", newline="") as fh:
@@ -102,8 +105,14 @@ def read_actions(actions_dir: Path) -> Actions:
         release_reservation_ids=[r["reservation_id"].strip() for r in rows("release.csv")],
         production_order_ids=[r["order_id"].strip() for r in rows("production.csv")],
         assignments={r["vin"].strip(): r["order_id"].strip() for r in rows("assignments.csv")},
-        open_delivery_centers=[(r["city"].strip(), r["state"].strip()) for r in rows("open_centers.csv")],
+        center_assignments={r["reservation_id"].strip(): r["center"].strip() for r in rows("center_assignments.csv")},
+        open_delivery_centers=[_center_spec(r) for r in rows("open_centers.csv")],
     )
+
+
+def _center_spec(row: dict) -> tuple:
+    cap = (row.get("capacity") or "").strip()
+    return (row["city"].strip(), row["state"].strip(), cap) if cap else (row["city"].strip(), row["state"].strip())
 
 
 __all__ = ["read_actions", "write_action_templates", "write_actions", "write_observation"]
