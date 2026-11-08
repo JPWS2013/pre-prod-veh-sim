@@ -31,6 +31,37 @@ The report prints to the terminal and is also saved under `runs/demo/report/`:
 `report.txt`, `summary.json`, `customers.csv` (one row per customer with every timestamp),
 `weekly.csv`, `by_center.csv`, `by_cohort.csv` and `by_config.csv`.
 
+## Write your own controller
+
+Open [`my_controller.py`](my_controller.py) and fill in these functions. Each one has a `TODO`
+and a docstring with its rules. Each week they're called in this order:
+
+| # | Function | Return | Required? |
+|---|---|---|---|
+| 1 | `open_centers(obs, memory)` | `[(city, state, capacity), ...]`; capacity is optional, default 25/week | Optional; return `[]` to keep the 20 default centers |
+| 2 | `assign_centers(obs, memory)` | `{reservation_id: center_id or "City, ST"}`; final once set | Yes |
+| 3 | `assign_vehicles(obs, memory)` | `{vin: order_id}`; configs must match | Yes |
+| 4 | `schedule_production(obs, memory, assignments)` | `[order_id, ...]`, at most `obs.production_capacity` | Yes |
+| 5 | `release_reservations(obs, memory)` | `[reservation_id, ...]` to invite to order | Yes |
+
+- `obs` is what the simulator reports for the week. The top of `my_controller.py` lists every
+  field.
+- `memory` is a dict that persists across weeks; store anything you want to remember.
+- `assignments` passed to `schedule_production` is what `assign_vehicles` returned that week.
+  Use it to avoid scheduling production for orders that are already getting a vehicle.
+
+Then run it:
+
+```bash
+uv run vehsim run --controller my_controller.py --out runs/mine
+```
+
+The unfilled template runs, but nothing happens: no one is invited, so nothing is built or
+delivered. If a function returns something invalid, the run stops and lists every problem.
+For a working example, see the FIFO controller in
+[`vehsim/controllers/fifo.py`](vehsim/controllers/fifo.py). To keep several strategies, copy
+`my_controller.py` under a new name and pass that file to `--controller`.
+
 ## Python API
 
 ```python

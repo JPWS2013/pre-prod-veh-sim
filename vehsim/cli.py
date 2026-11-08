@@ -1,11 +1,12 @@
 """Command line entry point.
 
-    vehsim run   [--config FILE] [--weeks N] [--seed S] [--out DIR] [--save-weekly]
+    vehsim run   [--controller fifo|my_controller.py] [--config FILE] [--weeks N] [--seed S] [--out DIR] [--save-weekly]
     vehsim init  DIR [--config FILE] [--weeks N] [--seed S]
     vehsim step  DIR
     vehsim report DIR
 
-``run`` drives the whole simulation with a built-in controller. ``init``/``step``
+``run`` drives the whole simulation with a built-in controller or your own
+controller file (copy and fill in my_controller.py). ``init``/``step``
 let you play the controller yourself through CSV files, one week at a time:
 
     DIR/week_003/observation/*.csv   what the simulator reports at the start of week 3
@@ -21,6 +22,7 @@ from pathlib import Path
 
 from .config import SimConfig
 from .controllers import CONTROLLERS
+from .controllers.template import TemplateController
 from .interface import SimulationError, Simulator
 from .io import read_actions, write_action_templates, write_actions, write_observation
 
@@ -36,13 +38,25 @@ def _config(args) -> SimConfig:
     return cfg
 
 
+def _controller(name: str):
+    """A built-in controller name (e.g. 'fifo') or a path to a controller .py file."""
+    if name in CONTROLLERS:
+        return CONTROLLERS[name]()
+    if name.endswith(".py") or Path(name).exists():
+        try:
+            return TemplateController.from_file(name)
+        except (FileNotFoundError, ImportError, AttributeError) as e:
+            raise SystemExit(f"cannot use controller {name}: {e}")
+    raise SystemExit(f"unknown controller {name!r}: use one of {sorted(CONTROLLERS)} or a path to a .py file")
+
+
 def _week_dir(root: Path, week: int) -> Path:
     return root / f"week_{week:03d}"
 
 
 def cmd_run(args) -> int:
+    controller = _controller(args.controller)
     sim = Simulator(_config(args))
-    controller = CONTROLLERS[args.controller]()
     obs = sim.reset()
     out = Path(args.out) if args.out else None
     while not sim.done:
@@ -50,7 +64,11 @@ def cmd_run(args) -> int:
         if out and args.save_weekly:
             write_observation(obs, _week_dir(out, obs.week) / "observation")
             write_actions(actions, _week_dir(out, obs.week) / "actions")
-        obs = sim.step(actions)
+        try:
+            obs = sim.step(actions)
+        except SimulationError as e:
+            print(f"Week {sim.week}: your controller's decisions were rejected.\n{e}", file=sys.stderr)
+            return 2
     report = sim.report()
     print(report.to_text())
     if out:
@@ -136,7 +154,8 @@ def main(argv=None) -> int:
 
     r = sub.add_parser("run", help="run a full simulation with a built-in controller")
     sim_opts(r)
-    r.add_argument("--controller", choices=sorted(CONTROLLERS), default="fifo")
+    r.add_argument("--controller", default="fifo",
+                   help="built-in controller name (fifo) or path to your controller file, e.g. my_controller.py")
     r.add_argument("--out", help="directory for report files")
     r.add_argument("--save-weekly", action="store_true", help="also save each week's observation and actions")
     r.set_defaults(func=cmd_run)
