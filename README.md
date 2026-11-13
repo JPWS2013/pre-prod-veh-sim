@@ -34,7 +34,9 @@ The report prints to the terminal and is also saved under `runs/demo/report/`:
 ## Write your own controller
 
 Open [`my_controller.py`](my_controller.py) and fill in these functions. Each one has a `TODO`
-and a docstring with its rules. Each week they're called in this order:
+and a docstring with its rules. Before the first week, the optional `init_memory(memory)` is
+called once so you can set starting values in `memory`. Then each week the others are called in
+this order:
 
 | # | Function | Return | Required? |
 |---|---|---|---|
@@ -46,7 +48,8 @@ and a docstring with its rules. Each week they're called in this order:
 
 - `obs` is what the simulator reports for the week. The top of `my_controller.py` lists every
   field.
-- `memory` is a dict that persists across weeks; store anything you want to remember.
+- `memory` is a dict that persists across weeks; store anything you want to remember. Set its
+  starting values in `init_memory`, either by filling in `memory` or by returning a dict.
 - `assignments` passed to `schedule_production` is what `assign_vehicles` returned that week.
   Use it to avoid scheduling production for orders that are already getting a vehicle.
 

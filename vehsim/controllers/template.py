@@ -10,7 +10,7 @@ from types import ModuleType
 from ..interface import Actions, Observation
 
 REQUIRED = ("assign_centers", "assign_vehicles", "schedule_production", "release_reservations")
-OPTIONAL = ("open_centers",)
+OPTIONAL = ("init_memory", "open_centers")
 
 
 def load_module(path: str | Path) -> ModuleType:
@@ -36,6 +36,14 @@ class TemplateController:
             raise AttributeError(f"{getattr(module, '__file__', module)} is missing: {', '.join(missing)}")
         self.module = module
         self.memory: dict = {}
+        init = getattr(module, "init_memory", None)
+        if callable(init):
+            returned = init(self.memory)
+            if isinstance(returned, dict):
+                if returned is not self.memory:
+                    self.memory.update(returned)
+            elif returned is not None:
+                raise TypeError(f"init_memory must return None or a dict, got {type(returned).__name__}")
 
     @classmethod
     def from_file(cls, path: str | Path) -> "TemplateController":
