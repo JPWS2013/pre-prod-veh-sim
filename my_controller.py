@@ -2,7 +2,8 @@
 
     uv run vehsim run --controller my_controller.py
 
-Every week the simulator calls these functions in this order:
+Before the first week, the simulator calls init_memory (optional) once so you
+can set up memory. Then every week the simulator calls these functions in this order:
 
     1. open_centers          (optional) open new delivery centers
     2. assign_centers        pick a delivery center for each new reservation
@@ -48,6 +49,21 @@ when they are equal (vehicle.config == order.config).
 from __future__ import annotations
 
 from vehsim import Observation
+
+
+def init_memory(memory: dict) -> None:
+    """Set up memory before the first week (optional; called once per run).
+
+    ``memory`` starts empty. Add any starting values, counters or lookup tables
+    your other functions expect, so they don't need memory.get(...) defaults.
+    This same dict is then passed to every function, every week.
+    You can also return a dict instead; its keys are added to memory.
+
+    Example:
+        memory["total_invited"] = 0
+        memory["invite_multiplier"] = 2.0
+    """
+    # TODO: add any starting values your controller needs.
 
 
 def open_centers(obs: Observation, memory: dict) -> list[tuple]:
