@@ -34,9 +34,10 @@ The report prints to the terminal and is also saved under `runs/demo/report/`:
 ## Write your own controller
 
 Open [`my_controller.py`](my_controller.py) and fill in these functions. Each one has a `TODO`
-and a docstring with its rules. Before the first week, the optional `init_memory(memory)` is
-called once so you can set starting values in `memory`. Then each week the others are called in
-this order:
+and a docstring with its rules. At the start of the first week, the optional
+`init_memory(obs, memory)` is called once with week 0's `obs` (so you can read the starting
+`obs.centers`, capacity, etc.) to set starting values in `memory`. Then each week the others are
+called in this order:
 
 | # | Function | Return | Required? |
 |---|---|---|---|

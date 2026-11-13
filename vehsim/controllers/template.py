@@ -36,20 +36,28 @@ class TemplateController:
             raise AttributeError(f"{getattr(module, '__file__', module)} is missing: {', '.join(missing)}")
         self.module = module
         self.memory: dict = {}
-        init = getattr(module, "init_memory", None)
-        if callable(init):
-            returned = init(self.memory)
-            if isinstance(returned, dict):
-                if returned is not self.memory:
-                    self.memory.update(returned)
-            elif returned is not None:
-                raise TypeError(f"init_memory must return None or a dict, got {type(returned).__name__}")
+        self._initialized = False
 
     @classmethod
     def from_file(cls, path: str | Path) -> "TemplateController":
         return cls(load_module(path))
 
+    def _init_memory(self, obs: Observation) -> None:
+        """Call the user's init_memory(obs, memory) once, with the first week's observation."""
+        self._initialized = True
+        init = getattr(self.module, "init_memory", None)
+        if not callable(init):
+            return
+        returned = init(obs, self.memory)
+        if isinstance(returned, dict):
+            if returned is not self.memory:
+                self.memory.update(returned)
+        elif returned is not None:
+            raise TypeError(f"init_memory must return None or a dict, got {type(returned).__name__}")
+
     def decide(self, obs: Observation) -> Actions:
+        if not self._initialized:
+            self._init_memory(obs)
         m, mem = self.module, self.memory
         opened = m.open_centers(obs, mem) if callable(getattr(m, "open_centers", None)) else []
         centers = m.assign_centers(obs, mem)
