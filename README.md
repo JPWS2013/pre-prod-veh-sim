@@ -41,8 +41,8 @@ called in this order:
 
 | # | Function | Return | Required? |
 |---|---|---|---|
-| 1 | `open_centers(obs, memory)` | `[(city, state, capacity), ...]`; capacity is optional, default 25/week | Optional; return `[]` to keep the 20 default centers |
-| 2 | `assign_centers(obs, memory)` | `{reservation_id: center_id or "City, ST"}`; final once set | Yes |
+| 1 | `open_centers(obs, memory)` | `["street, city, ST ZIP", ...]` or `[(address, capacity), ...]`; capacity is optional, default 25/week | Optional; return `[]` to keep the 20 default centers |
+| 2 | `assign_centers(obs, memory)` | `{reservation_id: center_id or full center address}`; final once set | Yes |
 | 3 | `assign_vehicles(obs, memory)` | `{vin: order_id}`; configs must match | Yes |
 | 4 | `schedule_production(obs, memory, assignments)` | `[order_id, ...]`, at most `obs.production_capacity` | Yes |
 | 5 | `release_reservations(obs, memory)` | `[reservation_id, ...]` to invite to order | Yes |
@@ -75,11 +75,11 @@ sim = Simulator(SimConfig(seed=42))
 obs = sim.reset()
 while not sim.done:
     actions = Actions(
-        center_assignments={"R000001": "C04"},  # reservation -> center id or "City, ST"; final
+        center_assignments={"R000001": "C04"},  # reservation -> center id or full address; final
         release_reservation_ids=[...],          # reservations invited to order
         production_order_ids=[...],             # at most obs.production_capacity
         assignments={"V0000001": "O000001"},    # built vehicle -> order (configs must match)
-        open_delivery_centers=[("Kansas City", "MO", 60)],  # optional; capacity/week optional
+        open_delivery_centers=[("1 W Pershing Rd, Kansas City, MO 64108", 60)],  # optional; capacity/week optional
     )
     obs = sim.step(actions)
 print(sim.report().to_text())
@@ -92,7 +92,7 @@ See `vehsim/controllers/fifo.py` for a complete controller.
 | Field | Meaning |
 |---|---|
 | `production_capacity` | Production slots for the coming week |
-| `new_reservations` | Reservations created last week, with address and `nearest_center_id` (a hint) |
+| `new_reservations` | Reservations created last week, with address |
 | `unassigned_reservations` | Active reservations that don't have a delivery center yet |
 | `new_orders` | Orders placed last week, with vehicle config |
 | `vehicles_started` / `vehicles_produced` | Builds started; vehicles that passed quality |
@@ -114,7 +114,7 @@ delivery center, or assigning a vehicle to an order with no delivery center. Wit
 uv run vehsim init runs/game            # creates runs/game/week_000/{observation,actions}
 # edit runs/game/week_000/actions/*.csv:
 #   center_assignments.csv (reservation_id,center), release.csv, production.csv,
-#   assignments.csv, open_centers.csv (city,state,capacity — capacity optional)
+#   assignments.csv, open_centers.csv (address,capacity — quote the address; capacity optional)
 uv run vehsim step runs/game            # simulates the week, writes week_001/
 uv run vehsim report runs/game          # report at any point
 ```
@@ -128,8 +128,10 @@ on the first day of the week.
   Addresses are drawn from ~75 US cities weighted by market size.
 - **Delivery centers** are assigned to reservations by the controller, at any point before a
   vehicle is assigned to the customer's order. Once set, a reservation's center can't be
-  changed. Each reservation comes with a `nearest_center_id` hint; the FIFO controller just
-  uses that.
+  changed. The FIFO controller sends each reservation to the closest center by city, using
+  `vehsim.geo.nearest_center_id(city, state, obs.centers)`. A center is defined by one full
+  address string, `"street, city, ST ZIP"` (ZIP optional). Distances use the address's city,
+  so two centers in one city are equally near to every customer.
 - **Ordering:** 10% of invited customers never order and stay `INVITED`. The rest order after
   X days, where X ~ Normal(10, 6) truncated to 1–30 days. The vehicle config (paint, interior,
   trim, wheels) is chosen at order time.
