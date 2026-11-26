@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 
+from ..geo import Geo, nearest_center_id
 from ..interface import Actions, Observation
 
 
@@ -75,7 +76,8 @@ class FifoController:
         for rid in release:
             self._outstanding[rid] = obs.day
 
-        centers = {r.id: r.nearest_center_id for r in obs.unassigned_reservations}
+        geo = Geo()
+        centers = {r.id: nearest_center_id(r.city, r.state, obs.centers, geo) for r in obs.unassigned_reservations}
 
         return Actions(release_reservation_ids=release, production_order_ids=production,
                        assignments=assignments, center_assignments=centers)
