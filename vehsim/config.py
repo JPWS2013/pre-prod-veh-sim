@@ -11,13 +11,28 @@ from typing import Any, Optional
 from .catalog import ConfigMix
 
 # 20 default delivery centers in key vehicle markets, spread across the US.
-DEFAULT_CENTERS: list[tuple[str, str]] = [
-    ("Seattle", "WA"), ("Portland", "OR"), ("San Francisco", "CA"), ("Los Angeles", "CA"),
-    ("Las Vegas", "NV"), ("Phoenix", "AZ"), ("Salt Lake City", "UT"), ("Denver", "CO"),
-    ("Dallas", "TX"), ("Houston", "TX"),
-    ("Minneapolis", "MN"), ("Chicago", "IL"), ("Detroit", "MI"),
-    ("Nashville", "TN"), ("Atlanta", "GA"), ("Charlotte", "NC"), ("Miami", "FL"),
-    ("Washington", "DC"), ("New York", "NY"), ("Boston", "MA"),
+# Each is a full "street, city, ST ZIP" address; centers get ids C01, C02, ... in this order.
+DEFAULT_CENTERS: list[str] = [
+    "2201 Elliott Ave, Seattle, WA 98121",
+    "1500 NW Naito Pkwy, Portland, OR 97209",
+    "1 Market St, San Francisco, CA 94105",
+    "800 W Olympic Blvd, Los Angeles, CA 90015",
+    "3150 Paradise Rd, Las Vegas, NV 89109",
+    "400 E Van Buren St, Phoenix, AZ 85004",
+    "175 W 200 S, Salt Lake City, UT 84101",
+    "1701 Wynkoop St, Denver, CO 80202",
+    "2500 Victory Ave, Dallas, TX 75219",
+    "1001 Avenida De Las Americas, Houston, TX 77010",
+    "600 1st Ave N, Minneapolis, MN 55403",
+    "233 S Wacker Dr, Chicago, IL 60606",
+    "2211 Woodward Ave, Detroit, MI 48201",
+    "501 Broadway, Nashville, TN 37203",
+    "265 Park Ave W NW, Atlanta, GA 30313",
+    "555 S Mint St, Charlotte, NC 28202",
+    "601 Biscayne Blvd, Miami, FL 33132",
+    "1000 F St NW, Washington, DC 20004",
+    "620 8th Ave, New York, NY 10018",
+    "100 Legends Way, Boston, MA 02114",
 ]
 
 
@@ -99,7 +114,7 @@ class SimConfig:
     factory: FactoryConfig = field(default_factory=FactoryConfig)
     logistics: LogisticsConfig = field(default_factory=LogisticsConfig)
     cancellation: CancellationConfig = field(default_factory=CancellationConfig)
-    centers: list[tuple[str, str]] = field(default_factory=lambda: list(DEFAULT_CENTERS))
+    centers: list[str] = field(default_factory=lambda: list(DEFAULT_CENTERS))  # full addresses
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -137,7 +152,7 @@ def _build(cls, data: dict[str, Any]):
         if dataclasses.is_dataclass(current):
             kwargs[name] = _build(type(current), value)
         elif name == "centers":
-            kwargs[name] = [tuple(c) for c in value]
+            kwargs[name] = [str(c) for c in value]
         else:
             kwargs[name] = value
     return cls(**kwargs)

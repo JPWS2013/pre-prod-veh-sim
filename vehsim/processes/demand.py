@@ -6,7 +6,7 @@ import math
 import random
 
 from ..config import DemandConfig
-from ..geo import CITIES
+from ..geo import CITIES, CITY_ZIPS
 from ..models import Address
 
 STREET_NAMES = ("Main", "Oak", "Maple", "Cedar", "Elm", "Park", "Lake", "Hill", "Pine", "Washington", "2nd", "3rd")
@@ -51,5 +51,10 @@ class AddressGenerator:
 
     def sample(self, rng: random.Random) -> Address:
         city, state = rng.choices(self.cities, weights=self.weights, k=1)[0]
-        street = f"{rng.randint(100, 9999)} {rng.choice(STREET_NAMES)} {rng.choice(STREET_TYPES)}"
-        return Address(street=street, city=city, state=state)
+        number = rng.randint(100, 9999)
+        street = f"{number} {rng.choice(STREET_NAMES)} {rng.choice(STREET_TYPES)}"
+        # Pick the ZIP from the house number rather than another rng draw, so adding ZIPs
+        # leaves the random stream (and every seeded run) unchanged.
+        zips = CITY_ZIPS.get((city, state))
+        zip_code = zips[number % len(zips)] if zips else None
+        return Address(street=street, city=city, state=state, zip=zip_code)

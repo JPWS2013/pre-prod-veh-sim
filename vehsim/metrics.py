@@ -114,6 +114,7 @@ class Report:
 
     def to_text(self) -> str:
         s = self.summary
+        cw = max([22] + [len(str(c["center"])) + 2 for c in self.by_center])  # center column width
         lines = [f"Simulation summary — {s['weeks']} weeks ({self.end_day} days)", ""]
         f = s["funnel"]
         lines += [
@@ -158,10 +159,10 @@ class Report:
             "  " + ", ".join(f"{k}: {v}" for k, v in s["cancellations_by_status"].items()),
             "",
             "Order → delivered by delivery center (days)",
-            f"  {'center':22}{'cap/wk':>7}{'delivered':>10}{'p50':>7}{'p90':>7}{'waiting':>8}{'cancel':>7}",
+            f"  {'center':{cw}}{'cap/wk':>7}{'delivered':>10}{'p50':>7}{'p90':>7}{'waiting':>8}{'cancel':>7}",
         ]
         for c in self.by_center:
-            lines.append(f"  {c['center']:22}{c['weekly_capacity']:>7}{c['delivered']:>10}"
+            lines.append(f"  {c['center']:{cw}}{c['weekly_capacity']:>7}{c['delivered']:>10}"
                          f"{_fmt(c['order_to_delivery_p50'], 7)}{_fmt(c['order_to_delivery_p90'], 7)}"
                          f"{c['still_waiting']:>8}{c['cancelled']:>7}")
         lines += ["", "Order → delivered by trim (days)"]

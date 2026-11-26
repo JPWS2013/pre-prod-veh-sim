@@ -45,8 +45,8 @@ def test_csv_center_actions(tmp_path):
     header = unassigned[0].split(",")
     first = dict(zip(header, unassigned[1].split(",")))
     acts = root / "week_001" / "actions"
-    (acts / "open_centers.csv").write_text("city,state,capacity\nOmaha,NE,75\n")
-    (acts / "center_assignments.csv").write_text(f"reservation_id,center\n{first['id']},\"Omaha, NE\"\n")
+    (acts / "open_centers.csv").write_text('address,capacity\n"1200 Douglas St, Omaha, NE 68102",75\n')
+    (acts / "center_assignments.csv").write_text(f"reservation_id,center\n{first['id']},\"1200 Douglas St, Omaha, NE 68102\"\n")
     assert main(["step", str(root)]) == 0
     centers = (root / "week_002" / "observation" / "centers.csv").read_text()
-    assert "Omaha,NE,75" in centers
+    assert '"1200 Douglas St, Omaha, NE 68102",75' in centers

@@ -20,10 +20,11 @@ FILLED = textwrap.dedent('''
         memory["weeks_seen"] = 0
 
     def open_centers(obs, memory):
-        return [("Omaha", "NE", 60)] if obs.week == 2 else []
+        return [("1200 Douglas St, Omaha, NE 68102", 60)] if obs.week == 2 else []
 
     def assign_centers(obs, memory):
-        return {r.id: r.nearest_center_id for r in obs.unassigned_reservations}
+        from vehsim.geo import nearest_center_id
+        return {r.id: nearest_center_id(r.city, r.state, obs.centers) for r in obs.unassigned_reservations}
 
     def assign_vehicles(obs, memory):
         open_ids = {o.id for o in obs.open_orders}
@@ -57,7 +58,7 @@ def test_filled_controller_delivers(tmp_path):
     assert ctl.memory["init_calls"] == 1
     assert ctl.memory["init_week"] == 0
     assert len(ctl.memory["centers"]) == 20  # default network, before Omaha opened in week 2
-    assert any(c.city == "Omaha" and c.weekly_capacity == 60 for c in sim.centers.values())
+    assert any("Omaha, NE" in c.address and c.weekly_capacity == 60 for c in sim.centers.values())
     assert sim.report().summary["funnel"]["delivered"] > 0
 
 

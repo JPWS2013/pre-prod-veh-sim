@@ -49,14 +49,12 @@ ACTIVE_STATUSES = {
 }
 
 
-def _split_ref(ref: str) -> tuple[str, str]:
-    """'Chicago, IL' -> ('Chicago', 'IL'); anything without a comma -> (ref, '')."""
-    city, _, state = str(ref).rpartition(",")
-    return (city, state) if city else (str(ref), "")
-
-
-def _center_key(city: str, state: str) -> tuple[str, str]:
-    return (" ".join(city.split()).lower(), state.strip().upper())
+def _center_key(address: str) -> Optional[str]:
+    """Canonical lower-case form of a center address, or None if it doesn't parse."""
+    try:
+        return str(Address.parse(address)).lower()
+    except ValueError:
+        return None
 
 
 class SimulationError(Exception):
@@ -81,10 +79,10 @@ class Actions:
     release_reservation_ids: list[str] = field(default_factory=list)
     production_order_ids: list[str] = field(default_factory=list)
     assignments: dict[str, str] = field(default_factory=dict)  # vin -> order_id
-    # reservation_id -> center id ("C03") or name ("Chicago, IL"). Final once applied.
+    # reservation_id -> center id ("C03") or its full address. Final once applied.
     center_assignments: dict[str, str] = field(default_factory=dict)
-    # (city, state) or (city, state, weekly_handover_capacity)
-    open_delivery_centers: list[tuple] = field(default_factory=list)
+    # "street, city, ST ZIP" or ("street, city, ST ZIP", weekly_handover_capacity)
+    open_delivery_centers: list = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -101,8 +99,8 @@ class ReservationView:
     street: str
     city: str
     state: str
+    zip: Optional[str]  # 5-digit ZIP as a string (may have a leading 0); None if unknown
     center_id: Optional[str]  # None until the controller assigns one
-    nearest_center_id: str  # hint: closest open center to the address
 
 
 @dataclass(frozen=True)
@@ -149,8 +147,7 @@ class DeliveryView:
 @dataclass(frozen=True)
 class CenterView:
     id: str
-    city: str
-    state: str
+    address: str  # "street, city, ST ZIP"
     weekly_capacity: int
     queue_length: int
     opened_day: int
@@ -262,8 +259,8 @@ class Simulator:
 
     def _init_default_centers(self) -> None:
         lg = self.config.logistics
-        for city, state in self.config.centers:
-            self._add_center(city, state, capacity=0, day=0)
+        for address in self.config.centers:
+            self._add_center(address, capacity=0, day=0)
         # Split total handover capacity by the market share each center serves.
         share = Counter()
         for city, state, lat, lon, w in CITIES:
@@ -273,10 +270,12 @@ class Simulator:
         for c in self.centers.values():
             c.weekly_capacity = max(lg.min_center_capacity, round(lg.total_handover_capacity * share[c.id] / total))
 
-    def _add_center(self, city: str, state: str, capacity: int, day: int) -> DeliveryCenter:
-        lat, lon = self.geo.coords(city, state)
+    def _add_center(self, address: str, capacity: int, day: int) -> DeliveryCenter:
+        # Coordinates come from the address's city (offline lookup), not the street.
+        parsed = Address.parse(address)
+        lat, lon = self.geo.coords(parsed.city, parsed.state)
         cid = self._next_id("C", 2)
-        center = DeliveryCenter(id=cid, city=city, state=state.upper(), lat=lat, lon=lon,
+        center = DeliveryCenter(id=cid, address=str(parsed), lat=lat, lon=lon,
                                 weekly_capacity=capacity, opened_day=day)
         self.centers[cid] = center
         return center
@@ -302,8 +301,8 @@ class Simulator:
         if rejections and self.config.strict:
             raise SimulationError(rejections)
 
-        for city, state, cap in plan["open"]:
-            self._open_center(city, state, cap, d0)
+        for address, cap in plan["open"]:
+            self._open_center(address, cap, d0)
         for rid, ref in plan["centers"]:
             self._assign_center(self.reservations[rid], self._center_by_ref(ref), d0)
         for rid in plan["release"]:
@@ -332,34 +331,36 @@ class Simulator:
         rej: list[Rejection] = []
         plan = {"open": [], "centers": [], "release": [], "production": [], "assign": []}
 
-        existing = {_center_key(c.city, c.state) for c in self.centers.values()}
+        existing = {_center_key(c.address) for c in self.centers.values()}
         new_names = set()
         for spec in a.open_delivery_centers:
-            label = ", ".join(str(x) for x in spec)
-            if len(spec) not in (2, 3):
-                rej.append(Rejection("open_center", label, "expected (city, state) or (city, state, capacity)"))
+            spec = (spec,) if isinstance(spec, str) else tuple(spec)
+            label = " | ".join(str(x) for x in spec)
+            if len(spec) not in (1, 2):
+                rej.append(Rejection("open_center", label, "expected an address or (address, capacity)"))
                 continue
-            city, state = str(spec[0]).strip(), str(spec[1]).strip().upper()
-            cap = spec[2] if len(spec) == 3 and spec[2] not in (None, "") else self.config.logistics.new_center_capacity
+            address = str(spec[0])
+            cap = spec[1] if len(spec) == 2 and spec[1] not in (None, "") else self.config.logistics.new_center_capacity
             try:
                 cap = int(cap)
             except (TypeError, ValueError):
                 cap = -1
-            key = _center_key(city, state)
+            try:
+                parsed = Address.parse(address)
+                self.geo.coords(parsed.city, parsed.state)
+            except ValueError as e:
+                rej.append(Rejection("open_center", label, str(e)))
+                continue
+            key = _center_key(address)
             if key in existing:
                 rej.append(Rejection("open_center", label, "a delivery center already exists there"))
                 continue
             if cap <= 0:
                 rej.append(Rejection("open_center", label, "capacity must be a positive whole number per week"))
                 continue
-            try:
-                self.geo.coords(city, state)
-            except ValueError as e:
-                rej.append(Rejection("open_center", label, str(e)))
-                continue
             existing.add(key)
             new_names.add(key)
-            plan["open"].append((city, state, cap))
+            plan["open"].append((address, cap))
 
         centered = set()
         for rid, ref in a.center_assignments.items():
@@ -372,7 +373,7 @@ class Simulator:
             elif r.center_id is not None:
                 rej.append(Rejection("center_assignment", rid,
                                      f"already assigned to {r.center_id}; center assignments are final"))
-            elif target is None and _center_key(*_split_ref(ref)) not in new_names:
+            elif target is None and _center_key(ref) not in new_names:
                 rej.append(Rejection("center_assignment", rid, f"unknown delivery center {ref!r}"))
             else:
                 plan["centers"].append((rid, ref))
@@ -443,17 +444,19 @@ class Simulator:
         if status in (CustomerStatus.DELIVERED, CustomerStatus.CANCELLED):
             self._active.pop(r.id, None)
 
-    def _open_center(self, city: str, state: str, capacity: int, day: int) -> None:
-        center = self._add_center(city, state, capacity, day)
+    def _open_center(self, address: str, capacity: int, day: int) -> None:
+        center = self._add_center(address, capacity, day)
         self._buf["opened"].append(center.id)
 
     def _center_by_ref(self, ref: str) -> Optional[str]:
-        """Center id from an id ("C03") or a name ("Chicago, IL"); None if unknown."""
+        """Center id from an id ("C03") or a full address; None if unknown."""
         if ref in self.centers:
             return ref
-        key = _center_key(*_split_ref(ref))
+        key = _center_key(ref)
+        if key is None:
+            return None
         for c in self.centers.values():
-            if _center_key(c.city, c.state) == key:
+            if _center_key(c.address) == key:
                 return c.id
         return None
 
@@ -462,11 +465,6 @@ class Simulator:
         if r.order_id:
             self.orders[r.order_id].center_id = center_id
 
-    def _nearest_center(self, r: Reservation) -> str:
-        """Closest open center to the customer (cached until a new center opens)."""
-        if r.nearest_hint is None or r.nearest_hint[0] != len(self.centers):
-            r.nearest_hint = (len(self.centers), self.resolver.resolve(r.address, self.centers.values()))
-        return r.nearest_hint[1]
 
     def _invite(self, r: Reservation, day: int) -> None:
         r.invited_day = day
@@ -652,7 +650,7 @@ class Simulator:
             open_orders=[self._order_view(o) for o in self.orders.values() if o.status in MATCHABLE_ORDER_STATUSES],
             available_vehicles=[self._vehicle_view(v) for v in self.vehicles.values()
                                 if v.status == VehicleStatus.AVAILABLE],
-            centers=[CenterView(c.id, c.city, c.state, c.weekly_capacity, len(c.queue), c.opened_day)
+            centers=[CenterView(c.id, c.address, c.weekly_capacity, len(c.queue), c.opened_day)
                      for c in self.centers.values()],
             factory=FactoryView(f.line_rate, f.positions, f.in_build, f.on_hold, f.free_positions),
             rejections=list(rejections),
@@ -660,7 +658,7 @@ class Simulator:
 
     def _reservation_view(self, r: Reservation) -> ReservationView:
         a = r.address
-        return ReservationView(r.id, r.created_day, a.street, a.city, a.state, r.center_id, self._nearest_center(r))
+        return ReservationView(r.id, r.created_day, a.street, a.city, a.state, a.zip, r.center_id)
 
     def _delivery_view(self, o: Order) -> DeliveryView:
         return DeliveryView(o.id, o.reservation_id, o.vin, o.center_id, o.delivered_day)

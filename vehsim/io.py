@@ -14,8 +14,8 @@ ACTION_FILES = {
     "release.csv": ["reservation_id"],
     "production.csv": ["order_id"],
     "assignments.csv": ["vin", "order_id"],
-    "center_assignments.csv": ["reservation_id", "center"],  # center id (C03) or "City, ST"
-    "open_centers.csv": ["city", "state", "capacity"],  # capacity optional
+    "center_assignments.csv": ["reservation_id", "center"],  # center id (C03) or full address
+    "open_centers.csv": ["address", "capacity"],  # "street, city, ST ZIP" (quoted); capacity optional
 }
 
 
@@ -84,7 +84,7 @@ def write_actions(actions: Actions, actions_dir: Path) -> None:
         "production.csv": [[o] for o in actions.production_order_ids],
         "assignments.csv": [[v, o] for v, o in actions.assignments.items()],
         "center_assignments.csv": [[r, c] for r, c in actions.center_assignments.items()],
-        "open_centers.csv": [list(c) + [""] * (3 - len(c)) for c in actions.open_delivery_centers],
+        "open_centers.csv": [_center_row(c) for c in actions.open_delivery_centers],
     }
     for name, header in ACTION_FILES.items():
         with open(actions_dir / name, "w", newline="") as fh:
@@ -110,9 +110,14 @@ def read_actions(actions_dir: Path) -> Actions:
     )
 
 
-def _center_spec(row: dict) -> tuple:
-    cap = (row.get("capacity") or "").strip()
-    return (row["city"].strip(), row["state"].strip(), cap) if cap else (row["city"].strip(), row["state"].strip())
+def _center_row(spec) -> list:
+    spec = [spec] if isinstance(spec, str) else list(spec)
+    return spec + [""] * (2 - len(spec))
+
+
+def _center_spec(row: dict):
+    address, cap = row["address"].strip(), (row.get("capacity") or "").strip()
+    return (address, cap) if cap else address
 
 
 __all__ = ["read_actions", "write_action_templates", "write_actions", "write_observation"]

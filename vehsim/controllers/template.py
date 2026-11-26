@@ -69,5 +69,5 @@ class TemplateController:
             production_order_ids=list(production or []),
             assignments=dict(assignments or {}),
             center_assignments=dict(centers or {}),
-            open_delivery_centers=[tuple(c) for c in (opened or [])],
+            open_delivery_centers=[c if isinstance(c, str) else tuple(c) for c in (opened or [])],
         )

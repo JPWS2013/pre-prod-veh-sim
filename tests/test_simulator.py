@@ -255,8 +255,8 @@ def test_new_reservations_have_no_center_until_controller_assigns():
     assert obs.new_reservations and all(r.center_id is None for r in obs.new_reservations)
     assert {r.id for r in obs.unassigned_reservations} == {r.id for r in obs.new_reservations}
     r = obs.new_reservations[0]
-    obs = sim.step(Actions(center_assignments={r.id: r.nearest_center_id}))
-    assert sim.reservations[r.id].center_id == r.nearest_center_id
+    obs = sim.step(Actions(center_assignments={r.id: "C05"}))
+    assert sim.reservations[r.id].center_id == "C05"
     assert r.id not in {x.id for x in obs.unassigned_reservations}
 
 
@@ -264,11 +264,11 @@ def test_center_assignment_is_final():
     sim = Simulator(small_config())
     obs = sim.step()
     rid = obs.new_reservations[0].id
-    sim.step(Actions(center_assignments={rid: "Chicago, IL"}))
+    sim.step(Actions(center_assignments={rid: "233 S Wacker Dr, Chicago, IL 60606"}))
     chicago = sim.reservations[rid].center_id
-    assert sim.centers[chicago].city == "Chicago"
+    assert sim.centers[chicago].address == "233 S Wacker Dr, Chicago, IL 60606"
     with pytest.raises(SimulationError, match="final"):
-        sim.step(Actions(center_assignments={rid: "Boston, MA"}))
+        sim.step(Actions(center_assignments={rid: "C20"}))
     assert sim.reservations[rid].center_id == chicago
 
 
@@ -276,7 +276,7 @@ def test_unknown_center_is_rejected():
     sim = Simulator(small_config())
     obs = sim.step()
     with pytest.raises(SimulationError, match="unknown delivery center"):
-        sim.step(Actions(center_assignments={obs.new_reservations[0].id: "Nowhere, ZZ"}))
+        sim.step(Actions(center_assignments={obs.new_reservations[0].id: "1 Main St, Nowhere, ZZ 00000"}))
 
 
 def test_vehicle_assignment_needs_a_center():
@@ -295,7 +295,7 @@ def test_vehicle_assignment_needs_a_center():
         sim.step(Actions(assignments={v.vin: oid}))
     # Assigning the center in the same week makes it valid.
     rid = sim.orders[oid].reservation_id
-    sim.step(Actions(assignments={v.vin: oid}, center_assignments={rid: "Denver, CO"}))
+    sim.step(Actions(assignments={v.vin: oid}, center_assignments={rid: "1701 Wynkoop St, Denver, CO 80202"}))
     assert sim.orders[oid].center_id == sim.reservations[rid].center_id
     assert sim.vehicles[v.vin].location == sim.orders[oid].center_id
 
@@ -305,16 +305,17 @@ def test_open_center_with_capacity_and_assign_same_week():
     sim = Simulator(cfg)
     obs = sim.step()
     rid = obs.new_reservations[0].id
-    obs = sim.step(Actions(open_delivery_centers=[("Kansas City", "MO", 120), ("Omaha", "NE")],
-                           center_assignments={rid: "Kansas City, MO"}))
-    kc = next(c for c in obs.centers if c.city == "Kansas City")
-    omaha = next(c for c in obs.centers if c.city == "Omaha")
+    kc_addr = "1 W Pershing Rd, Kansas City, MO 64108"
+    obs = sim.step(Actions(open_delivery_centers=[(kc_addr, 120), "1200 Douglas St, Omaha, NE 68102"],
+                           center_assignments={rid: "1 w pershing rd,  Kansas City, MO 64108"}))  # case/space-insensitive
+    kc = next(c for c in obs.centers if c.address == kc_addr)
+    omaha = next(c for c in obs.centers if "Omaha" in c.address)
     assert kc.weekly_capacity == 120
     assert omaha.weekly_capacity == cfg.logistics.new_center_capacity
     assert sim.reservations[rid].center_id == kc.id
     # Opening a center never moves customers who already have one.
     assigned_before = {r.id: r.center_id for r in sim.reservations.values() if r.center_id}
-    sim.step(Actions(open_delivery_centers=[("Wichita", "KS", 40)]))
+    sim.step(Actions(open_delivery_centers=[("100 S Main St, Wichita, KS 67202", 40)]))
     assert all(sim.reservations[i].center_id == c for i, c in assigned_before.items())
 
 
@@ -322,13 +323,26 @@ def test_open_center_with_capacity_and_assign_same_week():
 def test_bad_center_capacity_is_rejected(cap):
     sim = Simulator(small_config())
     with pytest.raises(SimulationError, match="capacity"):
-        sim.step(Actions(open_delivery_centers=[("Wichita", "KS", cap)]))
+        sim.step(Actions(open_delivery_centers=[("100 S Main St, Wichita, KS 67202", cap)]))
 
 
 def test_duplicate_center_is_rejected():
     sim = Simulator(small_config())
     with pytest.raises(SimulationError, match="already exists"):
-        sim.step(Actions(open_delivery_centers=[("Chicago", "IL")]))
+        sim.step(Actions(open_delivery_centers=["233 S Wacker Dr, Chicago, IL 60606"]))
+
+
+@pytest.mark.parametrize("address", ["Chicago, IL", "233 S Wacker Dr, Chicago, Illinois", "1 Main St, Omaha, NE 681"])
+def test_center_needs_full_address(address):
+    sim = Simulator(small_config())
+    with pytest.raises(SimulationError, match="street, city, ST ZIP"):
+        sim.step(Actions(open_delivery_centers=[address]))
+
+
+def test_second_center_in_a_city_is_allowed():
+    sim = Simulator(small_config())
+    obs = sim.step(Actions(open_delivery_centers=["1 Gateway Center, Chicago, IL 60606"]))
+    assert sum("Chicago, IL" in c.address for c in obs.centers) == 2
 
 
 # --- metrics -------------------------------------------------------------------------------
@@ -349,3 +363,15 @@ def test_report_writes_files(tmp_path):
     for name in ("summary.json", "report.txt", "customers.csv", "weekly.csv", "by_center.csv",
                  "by_cohort.csv", "by_config.csv"):
         assert (out / name).exists()
+
+
+def test_reservations_have_zip_codes():
+    from vehsim.geo import CITIES, CITY_ZIPS
+
+    assert {(c, s) for c, s, *_ in CITIES} <= CITY_ZIPS.keys()
+    sim = Simulator(SimConfig(seed=7, n_weeks=4))
+    sim.reset()
+    obs = sim.step(Actions())
+    assert obs.new_reservations
+    for r in obs.new_reservations:
+        assert r.zip in CITY_ZIPS[(r.city, r.state)]

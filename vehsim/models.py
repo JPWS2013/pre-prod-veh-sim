@@ -61,12 +61,26 @@ class Address:
         z = f" {self.zip}" if self.zip else ""
         return f"{self.street}, {self.city}, {self.state}{z}"
 
+    @classmethod
+    def parse(cls, text: str) -> "Address":
+        """'233 S Wacker Dr, Chicago, IL 60606' -> Address. The ZIP is optional.
+
+        Raises ValueError unless the text is "street, city, ST[ ZIP]".
+        """
+        parts = [" ".join(p.split()) for p in str(text).split(",")]
+        if len(parts) < 3 or not all(parts):
+            raise ValueError(f"expected 'street, city, ST ZIP', got {text!r}")
+        street, city, tail = ", ".join(parts[:-2]), parts[-2], parts[-1].split()
+        state, zip_code = tail[0].upper(), (tail[1] if len(tail) > 1 else None)
+        if len(state) != 2 or len(tail) > 2 or (zip_code and not (zip_code.isdigit() and len(zip_code) == 5)):
+            raise ValueError(f"expected 'street, city, ST ZIP' with a 2-letter state and 5-digit ZIP, got {text!r}")
+        return cls(street=street, city=city, state=state, zip=zip_code)
+
 
 @dataclass
 class DeliveryCenter:
     id: str
-    city: str
-    state: str
+    address: str  # full street address, e.g. "233 S Wacker Dr, Chicago, IL 60606"
     lat: float
     lon: float
     weekly_capacity: int
@@ -77,7 +91,7 @@ class DeliveryCenter:
 
     @property
     def name(self) -> str:
-        return f"{self.city}, {self.state}"
+        return self.address
 
 
 @dataclass
@@ -93,7 +107,6 @@ class Reservation:
     order_id: Optional[str] = None
     cancelled_day: Optional[int] = None
     status_at_cancel: Optional[CustomerStatus] = None
-    nearest_hint: Optional[tuple[int, str]] = field(default=None, repr=False)  # (n_centers, center_id) cache
 
 
 @dataclass

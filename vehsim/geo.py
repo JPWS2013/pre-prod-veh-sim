@@ -91,6 +91,86 @@ CITIES: list[tuple[str, str, float, float, float]] = [
     ("Honolulu", "HI", 21.31, -157.86, 1.0),
 ]
 
+# A few real ZIP codes in or near each city's center, used for generated customer addresses.
+# Strings, not ints: several start with 0 (e.g. Boston 02108).
+CITY_ZIPS: dict[tuple[str, str], tuple[str, ...]] = {
+    ("Seattle", "WA"): ("98101", "98104", "98109"),
+    ("Spokane", "WA"): ("99201", "99202", "99205"),
+    ("Portland", "OR"): ("97201", "97205", "97209"),
+    ("San Francisco", "CA"): ("94102", "94103", "94110"),
+    ("San Jose", "CA"): ("95110", "95112", "95113"),
+    ("Sacramento", "CA"): ("95814", "95816", "95818"),
+    ("Fresno", "CA"): ("93701", "93704", "93721"),
+    ("Los Angeles", "CA"): ("90012", "90015", "90017"),
+    ("San Diego", "CA"): ("92101", "92103", "92104"),
+    ("Las Vegas", "NV"): ("89101", "89104", "89106"),
+    ("Reno", "NV"): ("89501", "89502", "89503"),
+    ("Phoenix", "AZ"): ("85003", "85004", "85006"),
+    ("Tucson", "AZ"): ("85701", "85705", "85719"),
+    ("Salt Lake City", "UT"): ("84101", "84102", "84111"),
+    ("Boise", "ID"): ("83702", "83704", "83706"),
+    ("Denver", "CO"): ("80202", "80203", "80205"),
+    ("Albuquerque", "NM"): ("87102", "87106", "87108"),
+    ("El Paso", "TX"): ("79901", "79902", "79903"),
+    ("Billings", "MT"): ("59101", "59102", "59105"),
+    ("Cheyenne", "WY"): ("82001", "82007", "82009"),
+    ("Dallas", "TX"): ("75201", "75202", "75204"),
+    ("Houston", "TX"): ("77002", "77003", "77006"),
+    ("Austin", "TX"): ("78701", "78702", "78704"),
+    ("San Antonio", "TX"): ("78204", "78205", "78210"),
+    ("Oklahoma City", "OK"): ("73102", "73103", "73104"),
+    ("Wichita", "KS"): ("67202", "67203", "67211"),
+    ("Kansas City", "MO"): ("64105", "64106", "64108"),
+    ("St. Louis", "MO"): ("63101", "63102", "63103"),
+    ("Omaha", "NE"): ("68102", "68105", "68131"),
+    ("Des Moines", "IA"): ("50309", "50312", "50314"),
+    ("Minneapolis", "MN"): ("55401", "55402", "55403"),
+    ("Fargo", "ND"): ("58102", "58103", "58104"),
+    ("Sioux Falls", "SD"): ("57103", "57104", "57105"),
+    ("Milwaukee", "WI"): ("53202", "53203", "53204"),
+    ("Chicago", "IL"): ("60601", "60602", "60606"),
+    ("Indianapolis", "IN"): ("46202", "46204", "46225"),
+    ("Detroit", "MI"): ("48201", "48207", "48226"),
+    ("Grand Rapids", "MI"): ("49503", "49504", "49506"),
+    ("Columbus", "OH"): ("43201", "43206", "43215"),
+    ("Cleveland", "OH"): ("44113", "44114", "44115"),
+    ("Cincinnati", "OH"): ("45202", "45203", "45206"),
+    ("Pittsburgh", "PA"): ("15212", "15219", "15222"),
+    ("Louisville", "KY"): ("40202", "40203", "40204"),
+    ("Nashville", "TN"): ("37201", "37203", "37206"),
+    ("Memphis", "TN"): ("38103", "38104", "38105"),
+    ("Little Rock", "AR"): ("72201", "72202", "72205"),
+    ("New Orleans", "LA"): ("70112", "70113", "70130"),
+    ("Jackson", "MS"): ("39201", "39202", "39203"),
+    ("Birmingham", "AL"): ("35203", "35205", "35233"),
+    ("Atlanta", "GA"): ("30303", "30308", "30309"),
+    ("Charlotte", "NC"): ("28202", "28203", "28204"),
+    ("Raleigh", "NC"): ("27601", "27603", "27605"),
+    ("Charleston", "SC"): ("29401", "29403", "29407"),
+    ("Jacksonville", "FL"): ("32202", "32204", "32206"),
+    ("Orlando", "FL"): ("32801", "32803", "32806"),
+    ("Tampa", "FL"): ("33602", "33606", "33609"),
+    ("Miami", "FL"): ("33128", "33130", "33131"),
+    ("Richmond", "VA"): ("23219", "23220", "23223"),
+    ("Washington", "DC"): ("20001", "20005", "20009"),
+    ("Baltimore", "MD"): ("21201", "21202", "21230"),
+    ("Wilmington", "DE"): ("19801", "19802", "19806"),
+    ("Philadelphia", "PA"): ("19102", "19103", "19107"),
+    ("Newark", "NJ"): ("07102", "07103", "07105"),
+    ("New York", "NY"): ("10001", "10007", "10016"),
+    ("Hartford", "CT"): ("06103", "06105", "06106"),
+    ("Providence", "RI"): ("02903", "02906", "02908"),
+    ("Boston", "MA"): ("02108", "02110", "02116"),
+    ("Albany", "NY"): ("12203", "12207", "12210"),
+    ("Buffalo", "NY"): ("14201", "14202", "14203"),
+    ("Manchester", "NH"): ("03101", "03102", "03104"),
+    ("Portland", "ME"): ("04101", "04102", "04103"),
+    ("Burlington", "VT"): ("05401", "05405", "05408"),
+    ("Charleston", "WV"): ("25301", "25302", "25311"),
+    ("Anchorage", "AK"): ("99501", "99503", "99508"),
+    ("Honolulu", "HI"): ("96813", "96814", "96815"),
+}
+
 # Approximate geographic center of each state (fallback when a city is unknown).
 STATE_CENTROIDS: dict[str, tuple[float, float]] = {
     "AL": (32.8, -86.8), "AK": (61.4, -150.0), "AZ": (34.2, -111.7), "AR": (34.9, -92.4),
@@ -143,6 +223,27 @@ def haversine_miles(a: tuple[float, float], b: tuple[float, float]) -> float:
     lat2, lon2 = map(math.radians, b)
     h = math.sin((lat2 - lat1) / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2
     return 2 * EARTH_RADIUS_MILES * math.asin(math.sqrt(h))
+
+
+def nearest_center_id(city: str, state: str, centers: Iterable, geo: "Geo | None" = None) -> str:
+    """Id of the center closest to (city, state), by great-circle distance between cities.
+
+    ``centers`` are anything with ``.id`` and ``.address`` (e.g. ``obs.centers``); ties go
+    to the first one listed.
+    """
+    from .models import Address
+
+    geo = geo or Geo()
+    here = geo.coords(city, state)
+    best_id, best_dist = None, math.inf
+    for c in centers:
+        a = Address.parse(c.address)
+        d = haversine_miles(here, geo.coords(a.city, a.state))
+        if d < best_dist:
+            best_id, best_dist = c.id, d
+    if best_id is None:
+        raise RuntimeError("no delivery centers are open")
+    return best_id
 
 
 class CenterResolver(Protocol):
