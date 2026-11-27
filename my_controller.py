@@ -27,7 +27,7 @@ obs.week, obs.day                 week index (0-51) and its first day
 obs.production_capacity           production slots available this week
 obs.new_reservations              reservations created last week
 obs.unassigned_reservations       active reservations without a delivery center
-    each has: .id .created_day .street .city .state .center_id .nearest_center_id
+    each has: .id .created_day .street .city .state .zip .center_id
 obs.pending_reservation_ids       reservation ids not yet invited, oldest first
 obs.new_orders                    orders placed last week
 obs.open_orders                   orders without a vehicle (status "ORDERED" or "IN_PRODUCTION")
@@ -40,7 +40,7 @@ obs.vehicles_started              builds started last week
     .location is "FACTORY" or a center id
 obs.cancellations                 .reservation_id .order_id .day .status_at_cancel .freed_vin
 obs.deliveries                    .order_id .reservation_id .vin .center_id .day
-obs.centers                       .id .city .state .weekly_capacity .queue_length .opened_day
+obs.centers                       .id .address .weekly_capacity .queue_length .opened_day
 obs.factory                       .line_rate .positions .in_build .on_hold .free_positions
 
 A vehicle config (.config) has .paint .interior .trim .wheels; two configs match
@@ -50,6 +50,10 @@ when they are equal (vehicle.config == order.config).
 from __future__ import annotations
 
 from vehsim import Observation
+from geopy.geocoders import Nominatim
+from geopy.distance import geodesic
+
+from user_utils import memory_utils
 
 
 def init_memory(obs: Observation, memory: dict) -> None:
@@ -69,16 +73,22 @@ def init_memory(obs: Observation, memory: dict) -> None:
         memory["centers"] = {c.id: c for c in obs.centers}
         memory["capacity_by_center"] = {c.id: c.weekly_capacity for c in obs.centers}
     """
-    # TODO: add any starting values your controller needs.
+    print('Running memory initialization')
+
+    memory['center_mgmt']={center.id: {'reservations':[], 'orders':[], 'pending_deliveries': []} for center in obs.centers}
+    memory['geo_agent'] = geolocator = Nominatim(user_agent="geo_agent")
+    memory['nearest_center_city'] = {}
+    memory['center_coords_dict'] = memory_utils.setup_center_coords_dict(obs.centers, memory['geo_agent'])
 
 
 def open_centers(obs: Observation, memory: dict) -> list[tuple]:
     """Open new delivery centers (optional).
 
-    Return a list of (city, state) or (city, state, weekly_handover_capacity),
-    e.g. [("Omaha", "NE", 75)]. Without a capacity a center gets 25/week.
-    You can assign reservations to a center in the same week you open it by
-    using its name ("Omaha, NE") in assign_centers.
+    Return a list of full addresses ("street, city, ST ZIP") or
+    (address, weekly_handover_capacity) pairs, e.g.
+    [("1200 Douglas St, Omaha, NE 68102", 75)]. Without a capacity a center
+    gets 25/week. You can assign reservations to a center in the same week you
+    open it by using its address in assign_centers.
 
     Return [] to keep the current network.
     """
@@ -89,13 +99,13 @@ def open_centers(obs: Observation, memory: dict) -> list[tuple]:
 def assign_centers(obs: Observation, memory: dict) -> dict[str, str]:
     """Choose the delivery center for reservations that don't have one yet.
 
-    Return {reservation_id: center}, where center is a center id ("C04") or a
-    name ("Chicago, IL"). Assignments are final: a reservation's center can
+    Return {reservation_id: center}, where center is a center id ("C04") or
+    its full address ("233 S Wacker Dr, Chicago, IL 60606"). Assignments are final: a reservation's center can
     never be changed. A customer's order cannot receive a vehicle until their
     reservation has a center.
 
-    Candidates: obs.unassigned_reservations (each has a .nearest_center_id hint).
-    Example: return {r.id: r.nearest_center_id for r in obs.unassigned_reservations}
+    Candidates: obs.unassigned_reservations. Centers and their addresses: obs.centers.
+    Example (sends everyone to one center): return {r.id: "C01" for r in obs.unassigned_reservations}
     """
     # TODO: pick a center for each reservation in obs.unassigned_reservations.
     return {}

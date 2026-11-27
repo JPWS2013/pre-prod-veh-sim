@@ -128,10 +128,10 @@ on the first day of the week.
   Addresses are drawn from ~75 US cities weighted by market size.
 - **Delivery centers** are assigned to reservations by the controller, at any point before a
   vehicle is assigned to the customer's order. Once set, a reservation's center can't be
-  changed. The FIFO controller sends each reservation to the closest center by city, using
-  `vehsim.geo.nearest_center_id(city, state, obs.centers)`. A center is defined by one full
-  address string, `"street, city, ST ZIP"` (ZIP optional). Distances use the address's city,
-  so two centers in one city are equally near to every customer.
+  changed. Picking a center is up to the controller; the FIFO controller sends each
+  reservation to the closest center by city. A center is defined by one full address
+  string, `"street, city, ST ZIP"` (ZIP optional). Distances use the address's city, so two
+  centers in one city are equally near to every customer.
 - **Ordering:** 10% of invited customers never order and stay `INVITED`. The rest order after
   X days, where X ~ Normal(10, 6) truncated to 1–30 days. The vehicle config (paint, interior,
   trim, wheels) is chosen at order time.
