@@ -51,6 +51,9 @@ def test_default_setup():
     assert sim.config.n_weeks == 52
     assert len(sim.centers) == 20
     assert all(c.weekly_capacity >= 10 for c in sim.centers.values())
+    # Every default center has real coordinates, not a state-centroid fallback.
+    from vehsim.geo import STATE_CENTROIDS
+    assert not any((c.lat, c.lon) in STATE_CENTROIDS.values() for c in sim.centers.values())
     assert sim.factory.positions == 500 * 11
     obs = sim.reset()
     assert obs.production_capacity == 500
@@ -69,6 +72,8 @@ def test_full_default_run_is_consistent():
     rep = sim.report()
     f = rep.summary["funnel"]
     assert f["delivered"] + f["cancelled"] + f["still_waiting"] == f["reservations"]
+    assert f["assigned_to_center"] + f["unassigned_to_center"] == f["reservations"]
+    assert f["assigned_to_center"] >= f["delivered"]  # every delivery needs a center
     assert 0.08 < f["never_order_share"] < 0.12
     st = rep.summary["wait_days"]["invite_to_order"]
     assert 1 <= st["p50"] and st["max"] <= 30
@@ -264,9 +269,9 @@ def test_center_assignment_is_final():
     sim = Simulator(small_config())
     obs = sim.step()
     rid = obs.new_reservations[0].id
-    sim.step(Actions(center_assignments={rid: "233 S Wacker Dr, Chicago, IL 60606"}))
+    sim.step(Actions(center_assignments={rid: "2033 W Walnut St, Chicago, IL 60612"}))
     chicago = sim.reservations[rid].center_id
-    assert sim.centers[chicago].address == "233 S Wacker Dr, Chicago, IL 60606"
+    assert sim.centers[chicago].address == "2033 W Walnut St, Chicago, IL 60612"
     with pytest.raises(SimulationError, match="final"):
         sim.step(Actions(center_assignments={rid: "C20"}))
     assert sim.reservations[rid].center_id == chicago
@@ -295,7 +300,7 @@ def test_vehicle_assignment_needs_a_center():
         sim.step(Actions(assignments={v.vin: oid}))
     # Assigning the center in the same week makes it valid.
     rid = sim.orders[oid].reservation_id
-    sim.step(Actions(assignments={v.vin: oid}, center_assignments={rid: "1701 Wynkoop St, Denver, CO 80202"}))
+    sim.step(Actions(assignments={v.vin: oid}, center_assignments={rid: "3893 Steele St, Denver, CO 80205"}))
     assert sim.orders[oid].center_id == sim.reservations[rid].center_id
     assert sim.vehicles[v.vin].location == sim.orders[oid].center_id
 
@@ -329,7 +334,7 @@ def test_bad_center_capacity_is_rejected(cap):
 def test_duplicate_center_is_rejected():
     sim = Simulator(small_config())
     with pytest.raises(SimulationError, match="already exists"):
-        sim.step(Actions(open_delivery_centers=["233 S Wacker Dr, Chicago, IL 60606"]))
+        sim.step(Actions(open_delivery_centers=["2033 W Walnut St, Chicago, IL 60612"]))
 
 
 @pytest.mark.parametrize("address", ["Chicago, IL", "233 S Wacker Dr, Chicago, Illinois", "1 Main St, Omaha, NE 681"])

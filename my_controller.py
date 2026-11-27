@@ -105,7 +105,7 @@ def assign_centers(obs: Observation, memory: dict) -> dict[str, str]:
     """Choose the delivery center for reservations that don't have one yet.
 
     Return {reservation_id: center}, where center is a center id ("C04") or
-    its full address ("233 S Wacker Dr, Chicago, IL 60606"). Assignments are final: a reservation's center can
+    its full address ("2033 W Walnut St, Chicago, IL 60612"). Assignments are final: a reservation's center can
     never be changed. A customer's order cannot receive a vehicle until their
     reservation has a center.
 

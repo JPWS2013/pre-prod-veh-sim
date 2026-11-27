@@ -120,6 +120,8 @@ class Report:
         lines += [
             "Funnel",
             f"  Reservations               {f['reservations']:>8}",
+            f"    assigned to a center     {f['assigned_to_center']:>8}",
+            f"    never assigned a center  {f['unassigned_to_center']:>8}",
             f"  Invited to order           {f['invited']:>8}",
             f"    of which will never order {f['never_order_share']:>7.1%}",
             f"  Orders placed              {f['ordered']:>8}",
@@ -262,6 +264,9 @@ def build_report(sim: "Simulator") -> Report:
         "weeks": sim.week,
         "funnel": {
             "reservations": len(customers),
+            # At end of run; "unassigned" includes customers who cancelled before getting a center.
+            "assigned_to_center": sum(1 for c in customers if c["center_id"] is not None),
+            "unassigned_to_center": sum(1 for c in customers if c["center_id"] is None),
             "invited": len(invited),
             "never_order_share": (sum(1 for c in invited if c["will_order"] is False) / len(invited)) if invited else 0.0,
             "ordered": sum(1 for c in customers if c["order_id"]),

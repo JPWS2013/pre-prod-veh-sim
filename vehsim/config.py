@@ -10,29 +10,31 @@ from typing import Any, Optional
 
 from .catalog import ConfigMix
 
-# 20 default delivery centers in key vehicle markets, spread across the US.
-# Each is a full "street, city, ST ZIP" address; centers get ids C01, C02, ... in this order.
+# 20 default delivery centers: real Rivian service centers, spread across the US.
+# Addresses are from rivian.com's US service center list (Nov 2026), with suite/building
+# numbers dropped. Minneapolis is written as St Louis Park, its actual city, and all 20
+# were checked to geocode with Nominatim (OpenStreetMap). Ids are C01, C02, ... in this order.
 DEFAULT_CENTERS: list[str] = [
-    "2201 Elliott Ave, Seattle, WA 98121",
-    "1500 NW Naito Pkwy, Portland, OR 97209",
-    "1 Market St, San Francisco, CA 94105",
-    "800 W Olympic Blvd, Los Angeles, CA 90015",
-    "3150 Paradise Rd, Las Vegas, NV 89109",
-    "400 E Van Buren St, Phoenix, AZ 85004",
-    "175 W 200 S, Salt Lake City, UT 84101",
-    "1701 Wynkoop St, Denver, CO 80202",
-    "2500 Victory Ave, Dallas, TX 75219",
-    "1001 Avenida De Las Americas, Houston, TX 77010",
-    "600 1st Ave N, Minneapolis, MN 55403",
-    "233 S Wacker Dr, Chicago, IL 60606",
-    "2211 Woodward Ave, Detroit, MI 48201",
-    "501 Broadway, Nashville, TN 37203",
-    "265 Park Ave W NW, Atlanta, GA 30313",
-    "555 S Mint St, Charlotte, NC 28202",
-    "601 Biscayne Blvd, Miami, FL 33132",
-    "1000 F St NW, Washington, DC 20004",
-    "620 8th Ave, New York, NY 10018",
-    "100 Legends Way, Boston, MA 02114",
+    "3201 South Norfolk St, Seattle, WA 98118",
+    "2620 SW 1st Ave, Portland, OR 97201",
+    "340 Fell St, San Francisco, CA 94102",
+    "7701 Haskell Ave, Los Angeles, CA 91406",          # Van Nuys
+    "601 North Lindenwood Dr, Olathe, KS 66062",        # Kansas City area
+    "1075 E Salter Dr, Phoenix, AZ 85024",
+    "1830 Redwood Depot Ln, Salt Lake City, UT 84104",
+    "3893 Steele St, Denver, CO 80205",
+    "2512 Hawes Ave, Dallas, TX 75235",
+    "14820 North Freeway, Houston, TX 77090",
+    "6980 Oxford St, St Louis Park, MN 55426",          # Minneapolis area
+    "2033 W Walnut St, Chicago, IL 60612",
+    "32601 Industrial Dr, Madison Heights, MI 48071",   # Detroit area
+    "305 5th Ave N, Franklin, TN 37064",                # Nashville area
+    "2333 Defoor Hills Rd NW, Atlanta, GA 30318",
+    "9309 Monroe Rd, Charlotte, NC 28270",
+    "6955 NW 52nd St, Miami, FL 33166",
+    "8787 Snouffer School Rd, Gaithersburg, MD 20879",  # Washington, DC area
+    "512 Johnson Ave, Brooklyn, NY 11237",              # New York area
+    "25 Griffin Way, Chelsea, MA 02150",                # Boston area
 ]
 
 

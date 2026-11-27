@@ -171,6 +171,18 @@ CITY_ZIPS: dict[tuple[str, str], tuple[str, ...]] = {
     ("Honolulu", "HI"): ("96813", "96814", "96815"),
 }
 
+# Coordinates for delivery-center cities that aren't customer markets in CITIES (suburbs
+# where the default Rivian centers are). Used for distances only; no demand comes from them.
+CENTER_CITY_COORDS: dict[tuple[str, str], tuple[float, float]] = {
+    ("Olathe", "KS"): (38.89, -94.79),
+    ("St Louis Park", "MN"): (44.93, -93.37),
+    ("Madison Heights", "MI"): (42.53, -83.09),
+    ("Franklin", "TN"): (35.93, -86.87),
+    ("Gaithersburg", "MD"): (39.18, -77.18),
+    ("Brooklyn", "NY"): (40.71, -73.93),
+    ("Chelsea", "MA"): (42.39, -71.02),
+}
+
 # Approximate geographic center of each state (fallback when a city is unknown).
 STATE_CENTROIDS: dict[str, tuple[float, float]] = {
     "AL": (32.8, -86.8), "AK": (61.4, -150.0), "AZ": (34.2, -111.7), "AR": (34.9, -92.4),
@@ -200,6 +212,8 @@ class Geo:
 
     def __init__(self, cities: Iterable[tuple[str, str, float, float, float]] = CITIES) -> None:
         self._coords: dict[tuple[str, str], tuple[float, float]] = {}
+        for (city, state), (lat, lon) in CENTER_CITY_COORDS.items():
+            self._coords[_key(city, state)] = (lat, lon)
         for city, state, lat, lon, _w in cities:
             self._coords[_key(city, state)] = (lat, lon)
 
