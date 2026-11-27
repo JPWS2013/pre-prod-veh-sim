@@ -269,21 +269,28 @@ def build_report(sim: "Simulator") -> Report:
         cancelled_same_week = c["cancelled_day"] is not None and c["cancelled_day"] // 7 == week
         return week >= last_week or cancelled_same_week
 
+    # Funnel counts use only seen reservations, so delivered + cancelled + still_waiting
+    # == reservations. (Unseen ones can't be invited, ordered or delivered.)
+    seen_cancelled = [c for c in cancelled if not unseen(c)]
+    seen_waiting = [c for c in waiting if not unseen(c)]
+
     summary = {
         "weeks": sim.week,
         "funnel": {
-            "reservations": len(customers),
-            # At end of run. "unassigned" leaves out reservations the controller never saw
-            # (see unseen above), so it counts only ones it could have assigned but didn't.
+            # Reservations the controller saw (see unseen above). The controller never assigns an
+            # unseen one, so reservations == assigned_to_center + unassigned_to_center.
+            "reservations": sum(1 for c in customers if not unseen(c)),
+            "all_reservations": len(customers),  # including unseen; not printed
+            # At end of run; counts only reservations the controller could have assigned.
             "assigned_to_center": sum(1 for c in customers if c["center_id"] is not None),
             "unassigned_to_center": sum(1 for c in customers if c["center_id"] is None and not unseen(c)),
             "invited": len(invited),
             "never_order_share": (sum(1 for c in invited if c["will_order"] is False) / len(invited)) if invited else 0.0,
             "ordered": sum(1 for c in customers if c["order_id"]),
             "delivered": len(delivered),
-            "cancelled": len(cancelled),
-            "still_waiting": len(waiting),
-            "still_waiting_by_status": dict(Counter(c["status"] for c in waiting).most_common()),
+            "cancelled": len(seen_cancelled),
+            "still_waiting": len(seen_waiting),
+            "still_waiting_by_status": dict(Counter(c["status"] for c in seen_waiting).most_common()),
         },
         "wait_days": {k: summarize(c[k] for c in customers) for k in INTERVALS},
         "survival_estimate_days": {

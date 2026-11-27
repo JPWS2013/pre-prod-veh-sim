@@ -72,6 +72,7 @@ def test_full_default_run_is_consistent():
     rep = sim.report()
     f = rep.summary["funnel"]
     assert f["delivered"] + f["cancelled"] + f["still_waiting"] == f["reservations"]
+    assert f["assigned_to_center"] + f["unassigned_to_center"] == f["reservations"] < f["all_reservations"]
     assert f["unassigned_to_center"] == 0  # FIFO assigns every reservation it is shown
     assert f["assigned_to_center"] >= f["delivered"]  # every delivery needs a center
     assert 0.08 < f["never_order_share"] < 0.12
