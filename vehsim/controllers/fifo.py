@@ -5,8 +5,9 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 
-from ..geo import Geo, nearest_center_id
+from ..geo import Geo, haversine_miles
 from ..interface import Actions, Observation
+from ..models import Address
 
 
 class FifoController:
@@ -27,6 +28,7 @@ class FifoController:
         self.expected_conversion = expected_conversion
         self.invite_window_days = invite_window_days
         self._outstanding: dict[str, int] = {}  # reservation id -> invite day
+        self._geo = Geo()
 
     def decide(self, obs: Observation) -> Actions:
         # Forget invites that converted, cancelled, or are past the ordering window.
@@ -76,8 +78,18 @@ class FifoController:
         for rid in release:
             self._outstanding[rid] = obs.day
 
-        geo = Geo()
-        centers = {r.id: nearest_center_id(r.city, r.state, obs.centers, geo) for r in obs.unassigned_reservations}
+        centers = {r.id: self._nearest_center(r, obs.centers) for r in obs.unassigned_reservations}
 
         return Actions(release_reservation_ids=release, production_order_ids=production,
                        assignments=assignments, center_assignments=centers)
+
+    def _nearest_center(self, r, centers) -> str:
+        """Closest center to the reservation's city (city-to-city distance; ties go to the first)."""
+        here = self._geo.coords(r.city, r.state)
+        best_id, best_dist = None, math.inf
+        for c in centers:
+            a = Address.parse(c.address)
+            d = haversine_miles(here, self._geo.coords(a.city, a.state))
+            if d < best_dist:
+                best_id, best_dist = c.id, d
+        return best_id

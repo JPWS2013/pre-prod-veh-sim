@@ -225,27 +225,6 @@ def haversine_miles(a: tuple[float, float], b: tuple[float, float]) -> float:
     return 2 * EARTH_RADIUS_MILES * math.asin(math.sqrt(h))
 
 
-def nearest_center_id(city: str, state: str, centers: Iterable, geo: "Geo | None" = None) -> str:
-    """Id of the center closest to (city, state), by great-circle distance between cities.
-
-    ``centers`` are anything with ``.id`` and ``.address`` (e.g. ``obs.centers``); ties go
-    to the first one listed.
-    """
-    from .models import Address
-
-    geo = geo or Geo()
-    here = geo.coords(city, state)
-    best_id, best_dist = None, math.inf
-    for c in centers:
-        a = Address.parse(c.address)
-        d = haversine_miles(here, geo.coords(a.city, a.state))
-        if d < best_dist:
-            best_id, best_dist = c.id, d
-    if best_id is None:
-        raise RuntimeError("no delivery centers are open")
-    return best_id
-
-
 class CenterResolver(Protocol):
     """Decides which delivery center serves a customer address."""
 

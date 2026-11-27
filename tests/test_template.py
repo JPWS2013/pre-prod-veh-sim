@@ -23,8 +23,9 @@ FILLED = textwrap.dedent('''
         return [("1200 Douglas St, Omaha, NE 68102", 60)] if obs.week == 2 else []
 
     def assign_centers(obs, memory):
-        from vehsim.geo import nearest_center_id
-        return {r.id: nearest_center_id(r.city, r.state, obs.centers) for r in obs.unassigned_reservations}
+        # Center in the reservation's state if there is one, else the first center.
+        by_state = {c.address.rsplit(",", 1)[1].split()[0]: c.id for c in obs.centers}
+        return {r.id: by_state.get(r.state, obs.centers[0].id) for r in obs.unassigned_reservations}
 
     def assign_vehicles(obs, memory):
         open_ids = {o.id for o in obs.open_orders}
