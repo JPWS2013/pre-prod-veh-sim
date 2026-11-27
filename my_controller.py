@@ -125,7 +125,7 @@ def assign_centers(obs: Observation, memory: dict) -> dict[str, str]:
 
             for center_coords, center_id in center_coords_dict.items():
                 dist = geodesic(res_coords, center_coords).miles
-                print(f"Center {center_id} is {dist} from reservation address")
+                # print(f"Center {center_id} is {dist} from reservation address")
                 if dist < closest_center_distance:
                     closest_center_id = center_id
                     closest_center_distance = dist
@@ -147,7 +147,7 @@ def assign_centers(obs: Observation, memory: dict) -> dict[str, str]:
                     closest_center_city = center_city_state
             # print(f'After checking {center_city_state}, closest city with a delivery center is {closest_center_city}')
 
-        print(f'    Closest city with a delivery center is {closest_center_city}')
+        # print(f'    Closest city with a delivery center is {closest_center_city}')
         return closest_center_city
 
     reservation_assignments = {}
@@ -156,18 +156,18 @@ def assign_centers(obs: Observation, memory: dict) -> dict[str, str]:
         res_city_state = res.city + ', ' + res.state
         res_address = res.street + ', ' + res_city_state + ' ' + res.zip
         
-        print(f"Processing resevation in {res_city_state}")
+        # print(f"Processing resevation in {res_city_state}")
 
         if res_city_state in memory['center_coords_dict']:
-            print("    Reservation is in a city with a delivery center")
+            # print("    Reservation is in a city with a delivery center")
             center_city = res_city_state 
         
         elif res_city_state in memory['nearest_center_city']:
-            print("    Reservation is in a city without a delivery center but in the same city as another reservation")
+            # print("    Reservation is in a city without a delivery center but in the same city as another reservation")
             center_city = memory['nearest_center_city'][res_city_state]
                 
         else:
-            print("    Reservation is in a new city without a delivery center")
+            # print("    Reservation is in a new city without a delivery center")
             center_city = get_nearest_center_city(general_utils.get_coords(res_city_state, memory['rate_limiter']), memory['center_coords_dict'])
             memory['nearest_center_city'][res_city_state] = center_city            
 
