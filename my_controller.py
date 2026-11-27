@@ -52,8 +52,10 @@ from __future__ import annotations
 from vehsim import Observation
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
+from geopy.extra.rate_limiter import RateLimiter
 
 from user_utils import memory_utils
+from user_utils import general_utils
 
 
 def init_memory(obs: Observation, memory: dict) -> None:
@@ -76,9 +78,12 @@ def init_memory(obs: Observation, memory: dict) -> None:
     print('Running memory initialization')
 
     memory['center_mgmt']={center.id: {'reservations':[], 'orders':[], 'pending_deliveries': []} for center in obs.centers}
-    memory['geo_agent'] = geolocator = Nominatim(user_agent="geo_agent")
+    geolocator = Nominatim(user_agent="address_coord_lookup_agent")
+    memory['rate_limiter'] = RateLimiter(geolocator.geocode, min_delay_seconds=1)
     memory['nearest_center_city'] = {}
-    memory['center_coords_dict'] = memory_utils.setup_center_coords_dict(obs.centers, memory['geo_agent'])
+    memory['center_coords_dict'] = memory_utils.setup_center_coords_dict(obs.centers, memory['rate_limiter'])
+
+    print('Memory initialization complete!')
 
 
 def open_centers(obs: Observation, memory: dict) -> list[tuple]:
@@ -107,8 +112,69 @@ def assign_centers(obs: Observation, memory: dict) -> dict[str, str]:
     Candidates: obs.unassigned_reservations. Centers and their addresses: obs.centers.
     Example (sends everyone to one center): return {r.id: "C01" for r in obs.unassigned_reservations}
     """
-    # TODO: pick a center for each reservation in obs.unassigned_reservations.
-    return {}
+    def get_closest_center(res_address, center_coords_dict, rate_limiter):
+        # print(center_coords_dict)
+        if len(center_coords_dict) == 1:
+            allocated_center = list(center_coords_dict.values())[0]
+        
+        else:
+            closest_center_id = ''
+            closest_center_distance = float('inf')
+
+            res_coords = general_utils.get_coords(res_address, rate_limiter)
+
+            for center_coords, center_id in center_coords_dict.items():
+                dist = geodesic(res_coords, center_coords).miles
+                print(f"Center {center_id} is {dist} from reservation address")
+                if dist < closest_center_distance:
+                    closest_center_id = center_id
+                    closest_center_distance = dist
+
+                allocated_center = closest_center_id
+        return allocated_center
+
+    def get_nearest_center_city(res_city_state_coords, center_coords_dict):
+        closest_dist = float('inf')
+        closest_center_city = ""
+        
+        for center_city_state, center_coords_ids_dict in center_coords_dict.items():
+            # print(f'Checking {center_city_state}')
+            for center_coord in center_coords_ids_dict.keys():
+                dist = geodesic(res_city_state_coords, center_coord).miles
+                # print(f'Distance to a center in {center_city_state} is {dist}')
+                if dist < closest_dist:
+                    closest_dist = dist
+                    closest_center_city = center_city_state
+            # print(f'After checking {center_city_state}, closest city with a delivery center is {closest_center_city}')
+
+        print(f'    Closest city with a delivery center is {closest_center_city}')
+        return closest_center_city
+
+    reservation_assignments = {}
+
+    for res in obs.unassigned_reservations:
+        res_city_state = res.city + ', ' + res.state
+        res_address = res.street + ', ' + res_city_state + ' ' + res.zip
+        
+        print(f"Processing resevation in {res_city_state}")
+
+        if res_city_state in memory['center_coords_dict']:
+            print("    Reservation is in a city with a delivery center")
+            center_city = res_city_state 
+        
+        elif res_city_state in memory['nearest_center_city']:
+            print("    Reservation is in a city without a delivery center but in the same city as another reservation")
+            center_city = memory['nearest_center_city'][res_city_state]
+                
+        else:
+            print("    Reservation is in a new city without a delivery center")
+            center_city = get_nearest_center_city(general_utils.get_coords(res_city_state, memory['rate_limiter']), memory['center_coords_dict'])
+            memory['nearest_center_city'][res_city_state] = center_city            
+
+        reservation_assignments[res.id] = get_closest_center(res_address, memory['center_coords_dict'][center_city], memory['rate_limiter'])
+
+    # print(reservation_assignments)
+    return reservation_assignments
 
 
 def assign_vehicles(obs: Observation, memory: dict) -> dict[str, str]:
