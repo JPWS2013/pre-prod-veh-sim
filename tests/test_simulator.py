@@ -72,7 +72,7 @@ def test_full_default_run_is_consistent():
     rep = sim.report()
     f = rep.summary["funnel"]
     assert f["delivered"] + f["cancelled"] + f["still_waiting"] == f["reservations"]
-    assert f["assigned_to_center"] + f["unassigned_to_center"] == f["reservations"]
+    assert f["unassigned_to_center"] == 0  # FIFO assigns every reservation it is shown
     assert f["assigned_to_center"] >= f["delivered"]  # every delivery needs a center
     assert 0.08 < f["never_order_share"] < 0.12
     st = rep.summary["wait_days"]["invite_to_order"]
@@ -380,3 +380,15 @@ def test_reservations_have_zip_codes():
     assert obs.new_reservations
     for r in obs.new_reservations:
         assert r.zip in CITY_ZIPS[(r.city, r.state)]
+
+
+def test_unassigned_count_skips_reservations_the_controller_never_saw():
+    sim = Simulator(small_config())
+    sim.reset()
+    for _ in range(3):
+        sim.step(Actions())  # never assigns a center
+    f = sim.report().summary["funnel"]
+    seen = [r for r in sim.reservations.values()
+            if r.created_day // 7 < sim.week - 1
+            and not (r.cancelled_day is not None and r.cancelled_day // 7 == r.created_day // 7)]
+    assert seen and f["unassigned_to_center"] == len(seen)

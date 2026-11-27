@@ -32,7 +32,9 @@ def test_bad_actions_leave_state_untouched(tmp_path, capsys):
 
 def test_run_command(tmp_path, capsys):
     assert main(["run", "--weeks", "6", "--out", str(tmp_path / "out"), "--save-weekly"]) == 0
-    assert "Simulation summary" in capsys.readouterr().out
+    stdout = capsys.readouterr().out
+    assert "Simulation summary" in stdout
+    assert "Running week 0 (1 of 6)" in stdout and "Running week 5 (6 of 6)" in stdout
     assert (tmp_path / "out" / "week_000" / "observation" / "status.json").exists()
     assert (tmp_path / "out" / "report" / "weekly.csv").exists()
 

@@ -260,13 +260,23 @@ def build_report(sim: "Simulator") -> Report:
     held = [v for v in finished_build if v.hold_days > 0]
     slots = sum(sim.slots_offered)
 
+    # Reservations a controller never got to see without a center: made in the latest
+    # week (reported only after the run ends), or cancelled in the week they were made.
+    last_week = sim.week - 1
+
+    def unseen(c: dict) -> bool:
+        week = c["created_day"] // 7
+        cancelled_same_week = c["cancelled_day"] is not None and c["cancelled_day"] // 7 == week
+        return week >= last_week or cancelled_same_week
+
     summary = {
         "weeks": sim.week,
         "funnel": {
             "reservations": len(customers),
-            # At end of run; "unassigned" includes customers who cancelled before getting a center.
+            # At end of run. "unassigned" leaves out reservations the controller never saw
+            # (see unseen above), so it counts only ones it could have assigned but didn't.
             "assigned_to_center": sum(1 for c in customers if c["center_id"] is not None),
-            "unassigned_to_center": sum(1 for c in customers if c["center_id"] is None),
+            "unassigned_to_center": sum(1 for c in customers if c["center_id"] is None and not unseen(c)),
             "invited": len(invited),
             "never_order_share": (sum(1 for c in invited if c["will_order"] is False) / len(invited)) if invited else 0.0,
             "ordered": sum(1 for c in customers if c["order_id"]),

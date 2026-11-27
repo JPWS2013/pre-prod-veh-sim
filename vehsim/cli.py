@@ -59,7 +59,10 @@ def cmd_run(args) -> int:
     sim = Simulator(_config(args))
     obs = sim.reset()
     out = Path(args.out) if args.out else None
+    n_weeks = sim.config.n_weeks
     while not sim.done:
+        # flush so the line shows up right away, even while a slow controller is deciding
+        print(f"Running week {obs.week} ({obs.week + 1} of {n_weeks})...", flush=True)
         actions = controller.decide(obs)
         if out and args.save_weekly:
             write_observation(obs, _week_dir(out, obs.week) / "observation")
